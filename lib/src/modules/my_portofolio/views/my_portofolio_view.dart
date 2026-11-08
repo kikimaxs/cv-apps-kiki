@@ -354,10 +354,23 @@ class _MyPortofolioViewState extends State<MyPortofolioView> {
                   'a report for supervisor validation.',
             ]),
           ],
-          media: _Phones(
-            l: l,
-            names: const ['hadir_2.jpg', 'hadir_3.jpg', 'hadir_8.png'],
-            height: l.wide ? 400 : 230,
+          media: Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: l.wide ? 16 : 10,
+            runSpacing: l.wide ? 16 : 10,
+            children: [
+              for (final n in ['hadir_2.jpg', 'hadir_3.jpg', 'hadir_8.png'])
+                _Shot(n, height: l.wide ? 400 : 230),
+              // The app's own icon badge, sized like a badge next to the
+              // phone mockups instead of stretched to their height.
+              _Shot(
+                'hadir_icon.png',
+                width: l.wide ? 90 : 64,
+                radius: 20,
+                shadow: false,
+              ),
+            ],
           ),
         );
       case 9:
@@ -1099,6 +1112,7 @@ class _About extends StatelessWidget {
                   aspect: 0.7782,
                   radius: 24,
                   cache: 500,
+                  semanticLabel: 'Foto profil Kiki Triansyah',
                 ),
               ),
               const SizedBox(height: 18),
@@ -1335,7 +1349,8 @@ class _Shot extends StatelessWidget {
     this.shadow = true,
     this.cache = 420,
   }) : _path = null,
-       _aspect = null;
+       _aspect = null,
+       semanticLabel = null;
 
   /// An image outside the portfolio folder, with its own aspect ratio.
   const _Shot.asset(
@@ -1343,6 +1358,7 @@ class _Shot extends StatelessWidget {
     required double aspect,
     this.radius = 14,
     this.cache = 420,
+    this.semanticLabel,
   }) : name = path,
        _path = path,
        _aspect = aspect,
@@ -1358,6 +1374,12 @@ class _Shot extends StatelessWidget {
   final double radius;
   final bool shadow;
   final int cache;
+
+  /// Screen-reader description. Defaults to one derived from the file name
+  /// (e.g. every `mola_*` shot reads as "app MOLA TV") so every image in
+  /// the portfolio is announced as *something*, without having to label
+  /// each of the ~50 call sites by hand.
+  final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1384,8 +1406,38 @@ class _Shot extends StatelessWidget {
         child: image,
       ),
     );
+    image = Semantics(
+      label: semanticLabel ?? _autoShotLabel(name),
+      image: true,
+      child: image,
+    );
     if (height != null) return SizedBox(height: height, child: image);
     if (width != null) return SizedBox(width: width, child: image);
     return image;
   }
+}
+
+/// A reasonable screen-reader label guessed from a portfolio image's file
+/// name, so a gallery shot still reads as "screenshot of the X app" instead
+/// of being announced as an unlabelled image.
+String _autoShotLabel(String name) {
+  if (name.startsWith('cover_screen')) {
+    return 'Tangkapan layar profil LinkedIn di laptop';
+  }
+  if (name.startsWith('cover')) {
+    return 'Foto meja kerja dengan laptop, latar sampul portofolio';
+  }
+  const apps = {
+    'mola': 'MOLA TV',
+    'durioo': 'Durioo+',
+    'hadir': 'FWD HadIR',
+    'lifeline': 'LifelineConnect',
+  };
+  for (final entry in apps.entries) {
+    if (!name.startsWith('${entry.key}_')) continue;
+    if (name.contains('logo')) return 'Logo ${entry.value}';
+    if (name.contains('icon')) return 'Ikon aplikasi ${entry.value}';
+    return 'Cuplikan layar aplikasi ${entry.value}';
+  }
+  return 'Gambar portofolio';
 }

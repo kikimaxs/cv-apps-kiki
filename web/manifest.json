@@ -1,11 +1,11 @@
 {
-    "name": "cv_apps",
-    "short_name": "cv_apps",
+    "name": "Kiki Triansyah — Software Engineer & Mobile Developer",
+    "short_name": "Kiki Triansyah",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#080D18",
+    "theme_color": "#080D18",
+    "description": "CV dan portofolio aplikasi (MOLA TV, Durioo+, HadIR, LifelineConnect).",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
