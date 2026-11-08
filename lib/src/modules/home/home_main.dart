@@ -1,9 +1,38 @@
-import 'dart:ui';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'dart:async';
-import 'package:video_player/video_player.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'home_experience_lab.dart';
+import 'home_fx.dart';
+import 'home_motion.dart';
+import 'home_showreel.dart';
+
+/// Glyphs used only by home_showreel.dart and home_experience_lab.dart.
+///
+/// `flutter build web --release` shrinks the Font Awesome fonts to the glyphs
+/// its icon tree shaker can see, and (observed with font_awesome_flutter 11)
+/// it does not see icons that are referenced only from those two files, so
+/// they showed up as empty boxes on the web. Listing them here, as constants,
+/// keeps them in the shrunken font. Add any new icon used only there too.
+const List<FaIconData> kHomeFaIcons = [
+  FontAwesomeIcons.play,
+  FontAwesomeIcons.pause,
+  FontAwesomeIcons.arrowLeft,
+  FontAwesomeIcons.clock,
+  FontAwesomeIcons.volumeHigh,
+  FontAwesomeIcons.volumeXmark,
+  FontAwesomeIcons.xmark,
+  FontAwesomeIcons.triangleExclamation,
+  FontAwesomeIcons.laptop,
+  FontAwesomeIcons.circleCheck,
+  FontAwesomeIcons.handPointer,
+  // Used by the portfolio page (contact list).
+  FontAwesomeIcons.discord,
+];
 
 class HomeMain extends StatefulWidget {
   const HomeMain({super.key});
@@ -13,142 +42,331 @@ class HomeMain extends StatefulWidget {
 }
 
 class _HomeMainState extends State<HomeMain> {
+  static const _background = Color(0xFF080D18);
+  static const _surface = Color(0xFF111B2C);
+  static const _accent = Color(0xFF67D4FF);
   final PageController _pageController = PageController();
 
-  // Track visibility states for reveal animations
-  int _currentPage = 0;
-  final PageController _carouselController = PageController(
-    viewportFraction: 0.45,
-    initialPage:
-        600, // Start at a large index (multiple of 6) for infinite simulation
-  );
-  int _currentCarouselPage = 0;
-  Timer? _carouselTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    _startAutoSlide();
-  }
-
-  void _startAutoSlide() {
-    _carouselTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
-      if (_carouselController.hasClients) {
-        _carouselController.nextPage(
-          duration: const Duration(milliseconds: 1000),
-          curve: Curves.easeInOutQuart,
-        );
-      }
-    });
-  }
+  static const int _pageCount = 3;
+  final ValueNotifier<int> _currentPage = ValueNotifier<int>(0);
+  bool _isPageTransitioning = false;
+  int? _pendingPageDirection;
 
   @override
   void dispose() {
-    _carouselTimer?.cancel();
     _pageController.dispose();
-    _carouselController.dispose();
+    _currentPage.dispose();
     super.dispose();
   }
 
   void _scrollToNextPage() {
-    _pageController.nextPage(
+    _animateToPage(
+      _currentPage.value + 1,
       duration: const Duration(seconds: 1),
       curve: Curves.easeInOutCubic,
     );
   }
 
+  Future<void> _openLink(String url) async {
+    final uri = Uri.parse(url);
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _animateToPage(
+    int targetPage, {
+    Duration duration = const Duration(milliseconds: 650),
+    Curve curve = Curves.easeInOutCubic,
+  }) async {
+    if (!mounted ||
+        targetPage < 0 ||
+        targetPage >= _pageCount ||
+        !_pageController.hasClients ||
+        _isPageTransitioning) {
+      return;
+    }
+
+    _isPageTransitioning = true;
+    try {
+      await _pageController.animateToPage(
+        targetPage,
+        duration: duration,
+        curve: curve,
+      );
+    } finally {
+      _isPageTransitioning = false;
+    }
+  }
+
+  bool _onPageScrollNotification(
+    int pageIndex,
+    ScrollNotification notification,
+  ) {
+    if (notification.metrics.axis != Axis.vertical ||
+        notification.depth != 0 ||
+        pageIndex != _currentPage.value) {
+      return false;
+    }
+
+    if (notification is ScrollStartNotification) {
+      _pendingPageDirection = null;
+    } else if (notification is OverscrollNotification &&
+        !_isPageTransitioning) {
+      if (notification.overscroll > 0 &&
+          notification.metrics.extentAfter == 0) {
+        _pendingPageDirection = 1;
+      } else if (notification.overscroll < 0 &&
+          notification.metrics.extentBefore == 0) {
+        _pendingPageDirection = -1;
+      }
+    } else if (notification is ScrollEndNotification) {
+      final direction = _pendingPageDirection;
+      _pendingPageDirection = null;
+      if (direction != null) {
+        _animateToPage(_currentPage.value + direction);
+      }
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
+    assert(kHomeFaIcons.isNotEmpty);
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: SvgPicture.asset(
-              'assets/img/svg/cover_home.svg',
-              fit: BoxFit.cover,
-              alignment: Alignment.center,
-            ),
-          ),
-          Positioned.fill(
-            child: ColoredBox(color: Colors.black.withOpacity(0.85)),
-          ),
+      backgroundColor: _background,
+      body: CursorGlow(
+        background: const AuroraBackground(),
+        child: Stack(
+          children: [
+            // Scrollable Content using PageView for snapping effect
+            PageView(
+              controller: _pageController,
+              scrollDirection: Axis.vertical,
+              physics: const NeverScrollableScrollPhysics(),
+              onPageChanged: (index) {
+                _currentPage.value = index;
+                _pendingPageDirection = null;
+              },
+              children: [
+                // PAGE 1: INTRODUCTION & INTERACTIVE CAPABILITIES
+                _buildPageWrapper(
+                  child: _buildScrollablePage(
+                    pageIndex: 0,
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 112),
+                        RepaintBoundary(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: _buildHeroSection(),
+                          ),
+                        ),
+                        const SizedBox(height: 64),
+                        const Reveal(child: TechMarquee()),
+                        const SizedBox(height: 88),
+                        const HomeShowreel(),
+                        const SizedBox(height: 88),
+                        const Reveal(
+                          child: RepaintBoundary(child: HomeExperienceLab()),
+                        ),
+                        const SizedBox(height: 40),
+                        const _AnimatedScrollIndicator(),
+                        const SizedBox(height: 52),
+                      ],
+                    ),
+                  ),
+                ),
 
-          // Scrollable Content using PageView for snapping effect
-          PageView(
-            controller: _pageController,
-            scrollDirection: Axis.vertical,
-            onPageChanged: (index) {
-              setState(() => _currentPage = index);
-            },
-            children: [
-              // PAGE 1: HERO & CINEMATIC CAROUSEL
-              _buildPageWrapper(
-                usePadding: false,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const SizedBox(height: 40),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                        child: _buildHeroSection(),
+                // PAGE 2: SERVICES & CAPABILITIES
+                _buildPageWrapper(
+                  child: _buildScrollablePage(
+                    pageIndex: 1,
+                    padding: const EdgeInsets.only(top: 96, bottom: 40),
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: _currentPage,
+                      child: RepaintBoundary(
+                        child: _buildDetailedServices(context),
                       ),
-                      const SizedBox(height: 32),
-                      _buildCinematicCarousel(context),
-                      const SizedBox(height: 60),
-                      // Scroll Down Indicator
-                      _AnimatedScrollIndicator(),
-                      const SizedBox(height: 40),
-                    ],
+                      builder: (context, currentPage, child) =>
+                          _buildAnimatedSection(
+                            isVisible: currentPage == 1,
+                            child: child!,
+                          ),
+                    ),
                   ),
                 ),
-              ),
 
-              // PAGE 2: SERVICES & CAPABILITIES
-              _buildPageWrapper(
-                usePadding: false,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(vertical: 40),
-                  child: _buildAnimatedSection(
-                    isVisible: _currentPage == 1,
-                    child: _buildDetailedServices(context),
+                // PAGE 3: CONTACT FOOTER
+                _buildPageWrapper(
+                  useSafeArea: false,
+                  child: _buildScrollablePage(
+                    pageIndex: 2,
+                    padding: const EdgeInsets.only(top: 96),
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: _currentPage,
+                      child: RepaintBoundary(
+                        child: _buildContactFooter(context),
+                      ),
+                      builder: (context, currentPage, child) =>
+                          _buildAnimatedSection(
+                            isVisible: currentPage == 2,
+                            child: child!,
+                          ),
+                    ),
                   ),
                 ),
-              ),
-
-              // PAGE 3: CONTACT FOOTER
-              _buildPageWrapper(
-                usePadding: false,
-                useSafeArea: false,
-                child: _buildAnimatedSection(
-                  isVisible: _currentPage == 2,
-                  child: _buildContactFooter(context),
-                ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+            _buildNavigation(),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildPageWrapper({
-    required Widget child,
-    bool usePadding = true,
-    bool useSafeArea = true,
-  }) {
-    Widget content = Padding(
-      padding: usePadding
-          ? const EdgeInsets.symmetric(horizontal: 24.0)
-          : EdgeInsets.zero,
-      child: child,
+  Widget _buildNavigation() {
+    final width = MediaQuery.sizeOf(context).width;
+    final mobile = width < 1000;
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        margin: EdgeInsets.symmetric(
+          horizontal: mobile ? 14 : 32,
+          vertical: 12,
+        ),
+        padding: EdgeInsets.symmetric(
+          horizontal: mobile ? 16 : 22,
+          vertical: 9,
+        ),
+        decoration: BoxDecoration(
+          color: const Color(0xF2101928),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
+          boxShadow: const [
+            BoxShadow(color: Color(0x55000000), blurRadius: 24),
+          ],
+        ),
+        child: Stack(
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _accent,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: const Text(
+                    'K.',
+                    style: TextStyle(
+                      color: _background,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                    ),
+                  ),
+                ),
+                if (width >= 430) ...[
+                  const SizedBox(width: 10),
+                  const Text(
+                    'KIKI TRIANSYAH',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                if (!mobile) ...[
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                    ),
+                    onPressed: () => _animateToPage(0),
+                    child: const Text('Beranda'),
+                  ),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                    ),
+                    onPressed: () => _animateToPage(1),
+                    child: const Text('Keahlian'),
+                  ),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                    ),
+                    onPressed: () => context.go('/my_portofolio'),
+                    child: const Text('Portofolio'),
+                  ),
+                  TextButton(
+                    key: const ValueKey('nav-cv-button'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                    ),
+                    onPressed: () => context.go('/my_cv'),
+                    child: const Text('CV'),
+                  ),
+                  const SizedBox(width: 14),
+                ],
+                FilledButton.icon(
+                  onPressed: () => _animateToPage(2),
+                  icon: FaIcon(
+                    mobile
+                        ? FontAwesomeIcons.paperPlane
+                        : FontAwesomeIcons.comments,
+                    size: 16,
+                  ),
+                  label: Text(mobile ? 'Kontak' : 'Mari bicara'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _accent,
+                    foregroundColor: _background,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: mobile ? 12 : 18,
+                      vertical: 12,
+                    ),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
+  }
 
+  Widget _buildPageWrapper({required Widget child, bool useSafeArea = true}) {
     if (useSafeArea) {
-      return SafeArea(child: Center(child: content));
+      return SafeArea(child: Center(child: child));
     }
-    return Center(child: content);
+    return Center(child: child);
+  }
+
+  Widget _buildScrollablePage({
+    required int pageIndex,
+    required Widget child,
+    EdgeInsetsGeometry padding = EdgeInsets.zero,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          NotificationListener<ScrollNotification>(
+            onNotification: (notification) =>
+                _onPageScrollNotification(pageIndex, notification),
+            child: SingleChildScrollView(
+              key: PageStorageKey<int>(pageIndex),
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: ClampingScrollPhysics(),
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Padding(padding: padding, child: child),
+              ),
+            ),
+          ),
+    );
   }
 
   Widget _buildAnimatedSection({
@@ -156,14 +374,17 @@ class _HomeMainState extends State<HomeMain> {
     Key? key,
     bool isVisible = true,
   }) {
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 850);
     return AnimatedOpacity(
       key: key,
       opacity: isVisible ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 1000),
+      duration: duration,
       curve: Curves.easeOut,
       child: AnimatedSlide(
-        offset: isVisible ? Offset.zero : const Offset(0, 0.4),
-        duration: const Duration(milliseconds: 1000),
+        offset: isVisible ? Offset.zero : const Offset(0, 0.08),
+        duration: duration,
         curve: Curves.easeOutCubic,
         child: child,
       ),
@@ -171,136 +392,255 @@ class _HomeMainState extends State<HomeMain> {
   }
 
   Widget _buildHeroSection() {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 800),
-      builder: (context, value, child) {
-        return Opacity(
-          opacity: value,
-          child: Transform.translate(
-            offset: Offset(0, 20 * (1 - value)),
-            child: child,
+    final width = MediaQuery.sizeOf(context).width;
+    final mobile = width < 800;
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    final introduction = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: _staggerIn(reducedMotion, [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: _accent.withValues(alpha: 0.09),
+            border: Border.all(color: _accent.withValues(alpha: 0.26)),
+            borderRadius: BorderRadius.circular(30),
           ),
-        );
-      },
-      child: Column(
-        children: [
-          Text(
-            'WELCOME TO',
+          child: const Text(
+            'SOFTWARE DEVELOPER  /  FLUTTER SPECIALIST',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.8),
-              fontSize: 14,
-              letterSpacing: 4,
-              fontWeight: FontWeight.w300,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'MY CV & PORTFOLIO',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 32,
+              color: _accent,
+              fontSize: 10,
               fontWeight: FontWeight.w800,
-              letterSpacing: 1.2,
+              letterSpacing: 1.4,
             ),
           ),
-          const SizedBox(height: 12),
-          Container(
-            width: 60,
-            height: 2,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Colors.cyanAccent, Colors.blueAccent],
-              ),
-              borderRadius: BorderRadius.circular(1),
-            ),
+        ),
+        const SizedBox(height: 24),
+        AnimatedHeadline(
+          text: 'Membangun produk digital yang terasa tepat.',
+          highlight: const {4, 5},
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: mobile ? 39 : 64,
+            height: 1.06,
+            fontWeight: FontWeight.w900,
+            letterSpacing: mobile ? -1.8 : -3.2,
           ),
-          const SizedBox(height: 24),
-          const Text(
-            "Professional Software Developer specializing in End-to-End Enterprise Solutions.",
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 15,
-              height: 1.6,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionButtons(BuildContext context) {
-    return Column(
-      children: [
-        _buildGlassButton(
-          context,
-          label: 'VIEW MY CV',
-          subtitle: 'Professional experience & skills',
-          icon: Icons.description_outlined,
-          onTap: () => context.go('/my_cv'),
-          delay: 400,
         ),
         const SizedBox(height: 20),
-        _buildGlassButton(
-          context,
-          label: 'MY PORTFOLIO',
-          subtitle: 'Recent projects & creative work',
-          icon: Icons.palette_outlined,
-          onTap: () => context.go('/my_portofolio'),
-          delay: 600,
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 580),
+          child: const Text(
+            'Saya Kiki Triansyah. Saya merancang dan mengembangkan aplikasi mobile serta website, dari ide awal sampai siap digunakan orang banyak.',
+            style: TextStyle(
+              color: Color(0xFFB8C8DA),
+              fontSize: 16,
+              height: 1.65,
+            ),
+          ),
         ),
-      ],
+        const SizedBox(height: 28),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            FilledButton.icon(
+              onPressed: () => _animateToPage(2),
+              icon: const FaIcon(FontAwesomeIcons.arrowRight, size: 15),
+              label: const Text('Diskusikan proyek'),
+              style: FilledButton.styleFrom(
+                backgroundColor: _accent,
+                foregroundColor: _background,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 22,
+                  vertical: 18,
+                ),
+                textStyle: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => context.go('/my_portofolio'),
+              icon: const FaIcon(FontAwesomeIcons.briefcase, size: 15),
+              label: const Text('Lihat portofolio'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Color(0xFF41536A)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 18,
+                ),
+              ),
+            ),
+            OutlinedButton.icon(
+              key: const ValueKey('hero-cv-button'),
+              onPressed: () => context.go('/my_cv'),
+              icon: const FaIcon(FontAwesomeIcons.fileLines, size: 15),
+              label: const Text('Lihat CV'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Color(0xFF41536A)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 18,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 32),
+        const Wrap(
+          spacing: 22,
+          runSpacing: 8,
+          children: [
+            _HeroProof(
+              icon: FontAwesomeIcons.mobileScreenButton,
+              label: 'Mobile & web',
+            ),
+            _HeroProof(
+              icon: FontAwesomeIcons.rocket,
+              label: 'Dari ide hingga rilis',
+            ),
+            _HeroProof(
+              icon: FontAwesomeIcons.wandMagicSparkles,
+              label: 'Detail yang terasa',
+            ),
+          ],
+        ),
+      ]),
     );
+    final orbitSize = mobile ? math.min(width - 48, 340.0) : 420.0;
+    final orbit = Center(child: HeroOrbit(size: orbitSize));
+    final hero = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 1180),
+      child: mobile
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [introduction, const SizedBox(height: 36), orbit],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(child: introduction),
+                const SizedBox(width: 64),
+                orbit,
+              ],
+            ),
+    );
+    return hero;
+  }
+
+  /// Staggered fade-and-rise entrance for the hero copy. The headline
+  /// animates its own words, so it is passed through untouched.
+  List<Widget> _staggerIn(bool reducedMotion, List<Widget> children) {
+    if (reducedMotion) return children;
+    return [
+      for (var i = 0; i < children.length; i++)
+        children[i] is AnimatedHeadline
+            ? children[i]
+            : children[i]
+                  .animate(delay: (i * 80).ms)
+                  .fadeIn(duration: 550.ms, curve: Curves.easeOutCubic)
+                  .slideY(begin: 0.3, end: 0, curve: Curves.easeOutCubic),
+    ];
   }
 
   Widget _buildDetailedServices(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionHeader("Keahlian Utama", "What I Can Build For You"),
-          const SizedBox(height: 40),
-          _buildServiceCard(
-            title: "Web & Mobile Development",
-            description:
-                "Saya bisa membuat project Web dan Mobile Cross-platform maupun Native iOS & Android dengan performa tinggi dan desain responsif.",
-            icons: [
-              'flutter-svgrepo-com.svg',
-              'android-svgrepo-com.svg',
-              'ios-svgrepo-com.svg',
-              'react-svgrepo-com.svg',
-            ],
-            gradient: [Colors.blue, Colors.cyan],
-          ),
-          const SizedBox(height: 20),
-          _buildServiceCard(
-            title: "Backend & API Architecture",
-            description:
-                "Membangun data endpoint yang robust menggunakan Node JS, Express JS, dan Laravel untuk kebutuhan integrasi sistem Anda.",
-            icons: [
-              'node-js-svgrepo-com.svg',
-              'laravel-1-logo-svgrepo-com.svg',
-            ],
-            gradient: [Colors.greenAccent, Colors.teal],
-          ),
-          const SizedBox(height: 20),
-          _buildServiceCard(
-            title: "Database Management",
-            description:
-                "Pengelolaan database berskala besar menggunakan MySQL dan SQL Server dengan optimasi query yang efisien.",
-            icons: ['mysql-logo-svgrepo-com.svg'],
-            gradient: [Colors.orangeAccent, Colors.deepOrange],
-          ),
-          const SizedBox(height: 60),
-          // Tools & Environment integrated here
-          _buildTechStackCategories(),
-          const SizedBox(height: 40),
-          _buildEndToEndFocus(),
-        ],
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 1180),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionHeader(
+              'APA YANG SAYA KERJAKAN',
+              'Solusi yang dibangun untuk kebutuhan nyata.',
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Dari tampilan yang mudah dipakai hingga sistem yang mendukungnya, setiap bagian dibuat agar bekerja sebagai satu produk.',
+              style: TextStyle(
+                color: Color(0xFFB8C8DA),
+                fontSize: 16,
+                height: 1.6,
+              ),
+            ),
+            const SizedBox(height: 36),
+            LayoutBuilder(
+              builder: (context, constraints) => Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  SizedBox(
+                    width: constraints.maxWidth < 820
+                        ? constraints.maxWidth
+                        : (constraints.maxWidth - 32) / 3,
+                    child: _buildServiceCard(
+                      title: "Web & Mobile Development",
+                      description:
+                          "Saya bisa membuat project Web dan Mobile Cross-platform maupun Native iOS & Android dengan performa tinggi dan desain responsif.",
+                      icons: [
+                        'flutter-svgrepo-com.svg',
+                        'android-svgrepo-com.svg',
+                        'ios-svgrepo-com.svg',
+                        'react-svgrepo-com.svg',
+                      ],
+                      gradient: [Colors.blue, Colors.cyan],
+                    ),
+                  ),
+                  SizedBox(
+                    width: constraints.maxWidth < 820
+                        ? constraints.maxWidth
+                        : (constraints.maxWidth - 32) / 3,
+                    child: _buildServiceCard(
+                      title: "Backend & API Architecture",
+                      description:
+                          "Membangun data endpoint yang robust menggunakan Node JS, Express JS, dan Laravel untuk kebutuhan integrasi sistem Anda.",
+                      icons: [
+                        'node-js-svgrepo-com.svg',
+                        'laravel-1-logo-svgrepo-com.svg',
+                      ],
+                      gradient: [Colors.greenAccent, Colors.teal],
+                    ),
+                  ),
+                  SizedBox(
+                    width: constraints.maxWidth < 820
+                        ? constraints.maxWidth
+                        : (constraints.maxWidth - 32) / 3,
+                    child: _buildServiceCard(
+                      title: "Database Management",
+                      description:
+                          "Pengelolaan database berskala besar menggunakan MySQL dan SQL Server dengan optimasi query yang efisien.",
+                      icons: ['mysql-logo-svgrepo-com.svg'],
+                      gradient: [Colors.orangeAccent, Colors.deepOrange],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 70),
+            // Tools & Environment integrated here
+            _buildTechStackCategories(),
+            const SizedBox(height: 64),
+            _buildEndToEndFocus(),
+            const SizedBox(height: 56),
+            Center(
+              child: FilledButton.icon(
+                onPressed: () => _animateToPage(2),
+                icon: const FaIcon(FontAwesomeIcons.arrowRight, size: 16),
+                label: const Text('Punya proyek? Mari berbicara'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _accent,
+                  foregroundColor: _background,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 18,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -311,8 +651,8 @@ class _HomeMainState extends State<HomeMain> {
       children: [
         Text(
           subtitle.toUpperCase(),
-          style: const TextStyle(
-            color: Colors.cyanAccent,
+          style: TextStyle(
+            color: _accent,
             letterSpacing: 2,
             fontSize: 12,
             fontWeight: FontWeight.bold,
@@ -321,10 +661,12 @@ class _HomeMainState extends State<HomeMain> {
         const SizedBox(height: 8),
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             color: Colors.white,
-            fontSize: 28,
+            fontSize: MediaQuery.sizeOf(context).width < 600 ? 30 : 42,
             fontWeight: FontWeight.w900,
+            height: 1.12,
+            letterSpacing: -1.2,
           ),
         ),
         const SizedBox(height: 12),
@@ -339,66 +681,71 @@ class _HomeMainState extends State<HomeMain> {
     required List<String> icons,
     required List<Color> gradient,
   }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 4,
-                height: 24,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: gradient,
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
+    return HomeHoverLift(
+      glow: gradient.first,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: gradient,
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  borderRadius: BorderRadius.circular(2),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            description,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.6),
-              fontSize: 14,
-              height: 1.6,
+              ],
             ),
-          ),
-          const SizedBox(height: 20),
-          Wrap(
-            spacing: 16,
-            runSpacing: 16,
-            children: icons
-                .map(
-                  (icon) => SvgPicture.asset(
-                    'assets/svg/skill/$icon',
-                    width: 36,
-                    height: 36,
-                  ),
-                )
-                .toList(),
-          ),
-        ],
+            const SizedBox(height: 16),
+            Text(
+              description,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 14,
+                height: 1.6,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: icons
+                  .map(
+                    (icon) => SvgPicture.asset(
+                      'assets/svg/skill/$icon',
+                      width: 36,
+                      height: 36,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -408,27 +755,29 @@ class _HomeMainState extends State<HomeMain> {
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
+        color: Colors.white.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.auto_awesome,
+              const FaIcon(
+                FontAwesomeIcons.wandMagicSparkles,
                 color: Colors.cyanAccent,
                 size: 28,
               ),
               const SizedBox(width: 12),
-              const Text(
-                "End-to-End Solutions",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
+              const Expanded(
+                child: Text(
+                  'End-to-End Solutions',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -437,33 +786,33 @@ class _HomeMainState extends State<HomeMain> {
           Text(
             "Saya menangani seluruh siklus pengembangan aplikasi, memastikan hasil akhir yang sempurna dan siap tayang.",
             style: TextStyle(
-              color: Colors.white.withOpacity(0.5),
+              color: Colors.white.withValues(alpha: 0.5),
               fontSize: 14,
             ),
           ),
           const SizedBox(height: 40),
 
           _buildTrackingStep(
-            icon: Icons.lightbulb_outline,
+            icon: FontAwesomeIcons.lightbulb,
             title: "Ide & Konsultasi",
             description:
                 "Analisis kebutuhan, pembuatan mock-up, dan perencanaan fitur sesuai target bisnis Anda.",
             isFirst: true,
           ),
           _buildTrackingStep(
-            icon: Icons.code,
+            icon: FontAwesomeIcons.code,
             title: "Development & Coding",
             description:
                 "Proses coding menggunakan tech stack terbaru dengan clean code dan performa tinggi.",
           ),
           _buildTrackingStep(
-            icon: Icons.fact_check_outlined,
+            icon: FontAwesomeIcons.clipboardCheck,
             title: "Testing & QC",
             description:
                 "Uji coba menyeluruh di berbagai device (iOS/Android/Web) untuk memastikan tidak ada bug.",
           ),
           _buildTrackingStep(
-            icon: Icons.rocket_launch_outlined,
+            icon: FontAwesomeIcons.rocket,
             title: "Deployment & Public Release",
             description:
                 "Rilis ke App Store, Play Store, dan Hosting Web hingga aplikasi bisa diakses publik.",
@@ -475,7 +824,7 @@ class _HomeMainState extends State<HomeMain> {
   }
 
   Widget _buildTrackingStep({
-    required IconData icon,
+    required FaIconData icon,
     required String title,
     required String description,
     bool isFirst = false,
@@ -490,12 +839,15 @@ class _HomeMainState extends State<HomeMain> {
               Container(
                 width: 44,
                 height: 44,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
+                  color: Colors.white.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.cyanAccent.withOpacity(0.3)),
+                  border: Border.all(
+                    color: Colors.cyanAccent.withValues(alpha: 0.3),
+                  ),
                 ),
-                child: Icon(icon, color: Colors.cyanAccent, size: 22),
+                child: FaIcon(icon, color: Colors.cyanAccent, size: 18),
               ),
               if (!isLast)
                 Expanded(
@@ -505,7 +857,7 @@ class _HomeMainState extends State<HomeMain> {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          Colors.cyanAccent.withOpacity(0.5),
+                          Colors.cyanAccent.withValues(alpha: 0.5),
                           Colors.transparent,
                         ],
                         begin: Alignment.topCenter,
@@ -533,7 +885,7 @@ class _HomeMainState extends State<HomeMain> {
                 Text(
                   description,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.5),
+                    color: Colors.white.withValues(alpha: 0.5),
                     fontSize: 13,
                     height: 1.5,
                   ),
@@ -548,34 +900,40 @@ class _HomeMainState extends State<HomeMain> {
   }
 
   Widget _buildTechStackCategories() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionHeader("Tools & Environment", "Tech Stack & Ecosystem"),
-          const SizedBox(height: 30),
-          _buildStackCategory("Software Tools", [
-            _stackItem("VS Code", Icons.code),
-            _stackItem("Figma", Icons.draw),
-            _stackItem("Postman", Icons.api),
-            _stackItem("Git", Icons.account_tree),
-          ]),
-          const SizedBox(height: 20),
-          _buildStackCategory("Hardware", [
-            _stackItem("MacBook Pro", Icons.laptop_mac),
-            _stackItem("Android Test Device", Icons.phone_android),
-            _stackItem("iPhone Test Device", Icons.phone_iphone),
-          ]),
-          const SizedBox(height: 20),
-          _buildStackCategory("Cloud & Hosting", [
-            _stackItem("Firebase", Icons.cloud_queue),
-            _stackItem("VPS / Hosting", Icons.dns),
-            _stackItem("Play Console", Icons.shop_2),
-            _stackItem("App Store Connect", Icons.apple),
-          ]),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(
+          'ENGINEERING STACK',
+          'Teknologi yang saya gunakan.',
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'Fondasi teknis untuk merancang antarmuka, menghubungkan data, dan merilis produk.',
+          style: TextStyle(color: Color(0xFFB8C8DA), fontSize: 15, height: 1.6),
+        ),
+        const SizedBox(height: 30),
+        _buildStackCategory('Mobile & frontend', [
+          _stackItem('Flutter', FontAwesomeIcons.flutter),
+          _stackItem('React', FontAwesomeIcons.react),
+          _stackItem('Next.js', FontAwesomeIcons.globe),
+          _stackItem('Responsive UI', FontAwesomeIcons.laptopCode),
+        ]),
+        const SizedBox(height: 20),
+        _buildStackCategory('Backend & data', [
+          _stackItem('Node.js', FontAwesomeIcons.nodeJs),
+          _stackItem('Laravel', FontAwesomeIcons.laravel),
+          _stackItem('MySQL', FontAwesomeIcons.database),
+          _stackItem('Firebase', FontAwesomeIcons.fire),
+        ]),
+        const SizedBox(height: 20),
+        _buildStackCategory('Design & delivery', [
+          _stackItem('Figma', FontAwesomeIcons.figma),
+          _stackItem('Git', FontAwesomeIcons.gitAlt),
+          _stackItem('Testing & QC', FontAwesomeIcons.clipboardCheck),
+          _stackItem('App Store / Play Store', FontAwesomeIcons.googlePlay),
+        ]),
+      ],
     );
   }
 
@@ -586,7 +944,7 @@ class _HomeMainState extends State<HomeMain> {
         Text(
           title,
           style: TextStyle(
-            color: Colors.white.withOpacity(0.4),
+            color: Colors.white.withValues(alpha: 0.4),
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -597,522 +955,34 @@ class _HomeMainState extends State<HomeMain> {
     );
   }
 
-  Widget _stackItem(String label, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: Colors.white70, size: 16),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 14),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCinematicCarousel(BuildContext context) {
-    final List<Map<String, dynamic>> carouselData = [
-      {
-        'title': 'High-End Mobile Apps',
-        'type': 'FLUTTER • IOS • ANDROID',
-        'desc': 'Membangun aplikasi performa tinggi & responsif.',
-        'icons': [
-          'flutter-svgrepo-com.svg',
-          'android-svgrepo-com.svg',
-          'ios-svgrepo-com.svg',
-        ],
-        'color': const Color(0xFF0EA5E9),
-        'logo': Icons.phone_iphone,
-      },
-      {
-        'title': 'Scalable Web Projects',
-        'type': 'REACT • NEXT.JS • UI/UX',
-        'desc': 'Website modern & SEO friendly tingkat tinggi.',
-        'icons': ['react-svgrepo-com.svg', 'next-js-svgrepo-com.svg'],
-        'color': const Color(0xFF8B5CF6),
-        'logo': Icons.web,
-      },
-      {
-        'title': 'Durioo+: Released App',
-        'type': 'MOBILE • PLAYSTORE • APPSTORE',
-        'desc': 'Project rilis yang saya kerjakan dari awal hingga tayang publik.',
-        'icons': [
-          'flutter-svgrepo-com.svg',
-          'android-svgrepo-com.svg',
-          'ios-svgrepo-com.svg',
-        ],
-        'color': const Color(0xFF10B981),
-        'logo': Icons.verified,
-        'video': 'assets/video/durioo+_memang_berbaloi!.mp4',
-      },
-      {
-        'title': 'Production Showcase 0411',
-        'type': 'MOBILE • PLAYSTORE • APPSTORE',
-        'desc': 'Digital product berkualitas tinggi yang sudah rilis di store.',
-        'icons': [
-          'flutter-svgrepo-com.svg',
-          'android-svgrepo-com.svg',
-          'ios-svgrepo-com.svg',
-        ],
-        'color': const Color(0xFFF59E0B),
-        'logo': Icons.rocket_launch,
-        'video': 'assets/video/0411.mp4',
-      },
-      {
-        'title': 'End-to-End Release',
-        'type': 'APPSTORE • PLAYSTORE • QC',
-        'desc': 'Rilis dari nol sampai tayang di store publik.',
-        'icons': ['figma-svgrepo-com.svg', 'sentry-svgrepo-com.svg'],
-        'color': const Color(0xFFEC4899),
-        'logo': Icons.rocket_launch,
-      },
-      {
-        'title': 'Cloud & Hosting',
-        'type': 'VPS • FIREBASE • DOMAIN',
-        'desc': 'Integrasi server & live hosting proyek Anda.',
-        'icons': ['tailwind-svgrepo-com.svg'],
-        'color': const Color(0xFF6366F1),
-        'logo': Icons.cloud_done,
-      },
-    ];
-
-    return Column(
-      children: [
-        SizedBox(
-          height: 430,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              PageView.builder(
-                controller: _carouselController,
-                onPageChanged: (index) {
-                  setState(
-                    () => _currentCarouselPage = index % carouselData.length,
-                  );
-                },
-                // Removed itemCount for infinite loop
-                itemBuilder: (context, index) {
-                  final int dataIndex = index % carouselData.length;
-                  final item = carouselData[dataIndex];
-                  final isCurrent = _currentCarouselPage == dataIndex;
-                  return AnimatedScale(
-                    scale: isCurrent ? 1.0 : 0.9,
-                    duration: const Duration(milliseconds: 600),
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        color: Colors.grey[900],
-                        boxShadow: isCurrent
-                            ? [
-                                BoxShadow(
-                                  color: (item['color'] as Color).withOpacity(
-                                    0.2,
-                                  ),
-                                  blurRadius: 40,
-                                  spreadRadius: -10,
-                                ),
-                              ]
-                            : [],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: item.containsKey('video')
-                                  ? _VideoCard(
-                                      assetPath: item['video'],
-                                      isCurrent: isCurrent,
-                                    )
-                                  : Container(
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            (item['color'] as Color)
-                                                .withOpacity(0.3),
-                                            Colors.transparent,
-                                          ],
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.center,
-                                        ),
-                                      ),
-                                    ),
-                            ),
-                            Positioned.fill(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Colors.transparent,
-                                      Colors.black.withOpacity(0.95),
-                                    ],
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    stops: const [0.3, 1.0],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(24.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  // Strategic Call to Action on Specific Cards with Descriptive Full Text
-                                  if (dataIndex == 1) // 2nd Card: CV
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          "Experience Details",
-                                          style: TextStyle(
-                                            color: Colors.white38,
-                                            fontSize: 10,
-                                            letterSpacing: 2,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 12),
-                                        const Text(
-                                          "Explore my professional journey in detail — from my technical skills and hands-on experience to the projects and roles that have shaped my career.",
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            height: 1.5,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 24),
-                                        _buildModernCardButton(
-                                          context: context,
-                                          text: "View Full My CV",
-                                          color: item['color'],
-                                          onTap: () => context.go('/my_cv'),
-                                        ),
-                                      ],
-                                    )
-                                  else if (dataIndex ==
-                                      2) // 3rd Card: Released Product 1
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          "Released on Store",
-                                          style: TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 10,
-                                            letterSpacing: 2,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 12),
-                                        const Text(
-                                          "Durioo+: I built this from ground zero to a successful release on both Play Store and App Store, ensuring high performance.",
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 14,
-                                            height: 1.5,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 20),
-                                        _buildModernCardButton(
-                                          context: context,
-                                          text: "View Full Details",
-                                          color: item['color'],
-                                          onTap: () => _openVideoFull(
-                                            context,
-                                            item['video'],
-                                            item['title'],
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  else if (dataIndex ==
-                                      3) // 4th Card: Released Product 2
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          "Production Success",
-                                          style: TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 10,
-                                            letterSpacing: 2,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 12),
-                                        const Text(
-                                          "Showcasing application stability and production-ready quality for enterprise-level deployment.",
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 14,
-                                            height: 1.5,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 20),
-                                        _buildModernCardButton(
-                                          context: context,
-                                          text: "View Full Details",
-                                          color: item['color'],
-                                          onTap: () => _openVideoFull(
-                                            context,
-                                            item['video'],
-                                            item['title'],
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  else
-                                    // Default layout for other skill cards
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          item['title'],
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w900,
-                                            letterSpacing: 0.5,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          item['type'],
-                                          style: const TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 8,
-                                            fontWeight: FontWeight.bold,
-                                            letterSpacing: 1.0,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 80),
-                                      ],
-                                    ),
-                                ],
-                              ),
-                            ),
-                            // Only show icons/logo for non-CTA cards to keep CV/Portfolio clean
-                            if (dataIndex != 1 &&
-                                dataIndex != 2 &&
-                                dataIndex != 3) ...[
-                              Positioned(
-                                top: 16,
-                                right: 16,
-                                child: Icon(
-                                  item['logo'],
-                                  color: Colors.white.withOpacity(0.15),
-                                  size: 32,
-                                ),
-                              ),
-                              Positioned(
-                                top: 16,
-                                left: 16,
-                                child: Row(
-                                  children: (item['icons'] as List<String>)
-                                      .map(
-                                        (icon) => Padding(
-                                          padding: const EdgeInsets.only(
-                                            right: 6,
-                                          ),
-                                          child: SvgPicture.asset(
-                                            'assets/svg/skill/$icon',
-                                            width: 16,
-                                            height: 16,
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-
-              // Navigation Arrows
-              Positioned(
-                left: 12,
-                child: _buildNavArrow(
-                  icon: Icons.chevron_left,
-                  onTap: () {
-                    _carouselController.previousPage(
-                      duration: const Duration(milliseconds: 500),
-                      curve: Curves.easeOut,
-                    );
-                  },
-                ),
-              ),
-              Positioned(
-                right: 12,
-                child: _buildNavArrow(
-                  icon: Icons.chevron_right,
-                  onTap: () {
-                    _carouselController.nextPage(
-                      duration: const Duration(milliseconds: 500),
-                      curve: Curves.easeOut,
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-        // Modern Dots Indicator
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(carouselData.length, (index) {
-            final isSelected = _currentCarouselPage == index;
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 400),
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              width: isSelected ? 32 : 8,
-              height: 6,
-              decoration: BoxDecoration(
-                gradient: isSelected
-                    ? const LinearGradient(
-                        colors: [Colors.cyanAccent, Colors.blueAccent],
-                      )
-                    : null,
-                color: isSelected ? null : Colors.white.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(3),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: Colors.cyanAccent.withOpacity(0.4),
-                          blurRadius: 8,
-                          spreadRadius: 1,
-                        ),
-                      ]
-                    : [],
-                border: isSelected
-                    ? Border.all(
-                        color: Colors.white.withOpacity(0.5),
-                        width: 0.5,
-                      )
-                    : Border.all(color: Colors.transparent),
-              ),
-            );
-          }),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNavArrow({required IconData icon, required VoidCallback onTap}) {
-    return _CarouselNavButton(icon: icon, onTap: onTap);
-  }
-
-  Widget _buildGlassButton(
-    BuildContext context, {
-    required String label,
-    required String subtitle,
-    required IconData icon,
-    required VoidCallback onTap,
-    required int delay,
-  }) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 800),
-      curve: Curves.easeOutCubic,
-      builder: (context, value, child) {
-        return Opacity(
-          opacity: value,
-          child: Transform.translate(
-            offset: Offset(0, 30 * (1 - value)),
-            child: child,
-          ),
-        );
-      },
+  Widget _stackItem(String label, FaIconData icon) {
+    return HomeHoverLift(
+      glow: _accent,
+      borderRadius: BorderRadius.circular(12),
       child: Container(
-        width: double.infinity,
-        constraints: const BoxConstraints(maxWidth: 400),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Material(
-              color: Colors.white.withOpacity(0.08),
-              child: InkWell(
-                onTap: onTap,
-                splashColor: Colors.white10,
-                highlightColor: Colors.white10,
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withOpacity(0.12)),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(icon, color: Colors.white, size: 28),
-                      ),
-                      const SizedBox(width: 20),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              label,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              subtitle,
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.5),
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        Icons.chevron_right,
-                        color: Colors.white.withOpacity(0.3),
-                      ),
-                    ],
-                  ),
-                ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 20,
+              child: Center(
+                child: FaIcon(icon, color: Colors.white70, size: 15),
               ),
             ),
-          ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1121,595 +991,251 @@ class _HomeMainState extends State<HomeMain> {
   Widget _buildContactFooter(BuildContext context) {
     return Container(
       width: double.infinity,
-      height: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 58, 24, 30),
       decoration: const BoxDecoration(
-        color: Colors.black,
         gradient: LinearGradient(
-          colors: [Colors.black, Color(0xFF0F172A)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF101F33), _background],
         ),
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _buildSectionHeader("Get in Touch", "Let's Work Together"),
-          const SizedBox(height: 40),
-
-          // Contact Items
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              children: [
-                _buildContactItem(
-                  Icons.alternate_email,
-                  "Gmail",
-                  "kiki.triansyah93@gmail.com",
-                  Colors.redAccent,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1180),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'LANGKAH SELANJUTNYA',
+                style: TextStyle(
+                  color: _accent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2,
                 ),
-                _buildContactItem(
-                  Icons.link_outlined,
-                  "LinkedIn",
-                  "linkedin.com/in/kiki-triansyah/",
-                  Colors.blueAccent,
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Ide bagus layak menjadi produk yang hebat.',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: MediaQuery.sizeOf(context).width < 600 ? 39 : 62,
+                  fontWeight: FontWeight.w900,
+                  height: 1.08,
+                  letterSpacing: -2,
                 ),
-                _buildContactItem(
-                  Icons.chat_bubble_outline,
-                  "WhatsApp",
-                  "+62 877 2802 0907",
-                  Colors.greenAccent,
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Ceritakan kebutuhan Anda. Saya siap membantu merancang, membangun, dan merilis pengalaman digital yang berguna.',
+                style: TextStyle(
+                  color: Color(0xFFB8C8DA),
+                  fontSize: 16,
+                  height: 1.65,
                 ),
-                _buildContactItem(
-                  Icons.terminal,
-                  "GitHub",
-                  "@kikimaxs",
-                  Colors.white70,
+              ),
+              const SizedBox(height: 30),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  FilledButton.icon(
+                    onPressed: () => _openLink(
+                      'mailto:kiki.triansyah93@gmail.com?subject=Diskusi%20proyek',
+                    ),
+                    icon: const FaIcon(FontAwesomeIcons.envelope, size: 16),
+                    label: const Text('Kirim email'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _accent,
+                      foregroundColor: _background,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 22,
+                        vertical: 18,
+                      ),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _openLink('https://wa.me/6287728020907'),
+                    icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 18),
+                    label: const Text('Chat via WhatsApp'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Color(0xFF53647A)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 18,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 60),
+              Divider(color: Colors.white.withValues(alpha: 0.14)),
+              const SizedBox(height: 26),
+              LayoutBuilder(
+                builder: (context, constraints) => Wrap(
+                  spacing: 16,
+                  runSpacing: 16,
+                  children: [
+                    SizedBox(
+                      width: constraints.maxWidth < 700
+                          ? constraints.maxWidth
+                          : (constraints.maxWidth - 16) / 2,
+                      child: _buildContactItem(
+                        FontAwesomeIcons.envelope,
+                        'Email',
+                        'kiki.triansyah93@gmail.com',
+                        'mailto:kiki.triansyah93@gmail.com',
+                      ),
+                    ),
+                    SizedBox(
+                      width: constraints.maxWidth < 700
+                          ? constraints.maxWidth
+                          : (constraints.maxWidth - 16) / 2,
+                      child: _buildContactItem(
+                        FontAwesomeIcons.linkedin,
+                        'LinkedIn',
+                        'Kiki Triansyah',
+                        'https://www.linkedin.com/in/kiki-triansyah/',
+                      ),
+                    ),
+                    SizedBox(
+                      width: constraints.maxWidth < 700
+                          ? constraints.maxWidth
+                          : (constraints.maxWidth - 16) / 2,
+                      child: _buildContactItem(
+                        FontAwesomeIcons.github,
+                        'GitHub',
+                        '@kikimaxs',
+                        'https://github.com/kikimaxs',
+                      ),
+                    ),
+                    SizedBox(
+                      width: constraints.maxWidth < 700
+                          ? constraints.maxWidth
+                          : (constraints.maxWidth - 16) / 2,
+                      child: _buildContactItem(
+                        FontAwesomeIcons.gitlab,
+                        'GitLab',
+                        '@kikitriansyah',
+                        'https://gitlab.com/kikitriansyah',
+                      ),
+                    ),
+                  ],
                 ),
-                _buildContactItem(
-                  Icons.code_off,
-                  "GitLab",
-                  "@kikitriansyah",
-                  Colors.orangeAccent,
-                ),
-                _buildContactItem(
-                  Icons.discord,
-                  "Discord",
-                  "@kikimaxs",
-                  Colors.indigoAccent,
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 64),
+              Divider(color: Colors.white.withValues(alpha: 0.14)),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 30,
+                runSpacing: 16,
+                children: [
+                  const Text(
+                    '© 2026 Kiki Triansyah  ·  Dibuat dengan Flutter',
+                    style: TextStyle(color: Color(0xFF8EA3B8), fontSize: 12),
+                  ),
+                  const _AnimatedBackToTop(),
+                ],
+              ),
+            ],
           ),
-
-          const SizedBox(height: 40),
-
-          // Back to Top Button
-          _AnimatedBackToTop(),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildContactItem(
-    IconData icon,
+    FaIconData icon,
     String label,
     String value,
-    Color color,
+    String url,
   ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
+    return HomeHoverLift(
+      glow: _accent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: () => _openLink(url),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(width: 20),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.4),
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                ),
-              ],
-            ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.045),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
           ),
-          Icon(
-            Icons.chevron_right,
-            color: Colors.white.withOpacity(0.1),
-            size: 16,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildModernCardButton({
-    required BuildContext context,
-    required String text,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(30),
-          boxShadow: [
-            BoxShadow(
-              color: color.withOpacity(0.4),
-              blurRadius: 15,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              text,
-              style: const TextStyle(
-                color: Colors.black,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.5,
+          child: Row(
+            children: [
+              SizedBox(
+                width: 30,
+                child: Center(child: FaIcon(icon, color: _accent, size: 22)),
               ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(
-              Icons.arrow_circle_right_rounded,
-              color: Colors.black,
-              size: 40,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _openVideoFull(BuildContext context, String assetPath, String title) {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Video Detail',
-      barrierColor: Colors.black.withOpacity(0.9),
-      transitionDuration: const Duration(milliseconds: 500),
-      pageBuilder: (context, anim1, anim2) {
-        return Center(
-          child: _VideoDetailModal(
-            assetPath: assetPath,
-            title: title,
-          ),
-        );
-      },
-      transitionBuilder: (context, anim1, anim2, child) {
-        return FadeTransition(
-          opacity: anim1,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.9, end: 1.0).animate(
-              CurvedAnimation(parent: anim1, curve: Curves.easeOutBack),
-            ),
-            child: child,
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _VideoDetailModal extends StatefulWidget {
-  final String assetPath;
-  final String title;
-
-  const _VideoDetailModal({required this.assetPath, required this.title});
-
-  @override
-  State<_VideoDetailModal> createState() => _VideoDetailModalState();
-}
-
-class _VideoDetailModalState extends State<_VideoDetailModal> {
-  late VideoPlayerController _controller;
-  bool _initialized = false;
-  bool _showControls = true;
-  Timer? _hideTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoPlayerController.asset(widget.assetPath)
-      ..initialize().then((_) {
-        if (mounted) {
-          setState(() {
-            _initialized = true;
-            _controller.play();
-          });
-          _startHideTimer();
-        }
-      });
-    _controller.addListener(_videoListener);
-  }
-
-  void _videoListener() {
-    if (mounted) {
-      if (_controller.value.position >= _controller.value.duration &&
-          !_controller.value.isPlaying) {
-        if (!_showControls) setState(() => _showControls = true);
-      }
-      setState(() {}); // Update for time and replay icon
-    }
-  }
-
-  void _startHideTimer() {
-    _hideTimer?.cancel();
-    _hideTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted && _controller.value.isPlaying) {
-        setState(() => _showControls = false);
-      }
-    });
-  }
-
-  void _onInteraction([dynamic _]) {
-    if (mounted) {
-      if (!_showControls) setState(() => _showControls = true);
-      _startHideTimer();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.removeListener(_videoListener);
-    _hideTimer?.cancel();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final modalWidth = size.width > 900 ? 800.0 : size.width * 0.95;
-    final isFinished = _initialized && 
-        _controller.value.position >= _controller.value.duration;
-
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        width: modalWidth,
-        constraints: BoxConstraints(maxHeight: size.height * 0.9),
-        decoration: BoxDecoration(
-          color: const Color(0xFF181818),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.5),
-              blurRadius: 30,
-              spreadRadius: 5,
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Video Section
-                AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: Stack(
-                    children: [
-                      MouseRegion(
-                        onHover: _onInteraction,
-                        onEnter: _onInteraction,
-                        child: GestureDetector(
-                          onTap: _onInteraction,
-                          behavior: HitTestBehavior.opaque,
-                          child: Stack(
-                            children: [
-                              _initialized
-                                  ? VideoPlayer(_controller)
-                                  : Container(
-                                      color: Colors.black26,
-                                      child: const Center(
-                                          child: CircularProgressIndicator(
-                                              color: Colors.cyanAccent)),
-                                    ),
-                              // Controls Overlay
-                              AnimatedOpacity(
-                                opacity: _showControls ? 1.0 : 0.0,
-                                duration: const Duration(milliseconds: 300),
-                                child: IgnorePointer(
-                                  ignoring: !_showControls,
-                                  child: Stack(
-                                    children: [
-                                      Center(
-                                        child: GestureDetector(
-                                          onTap: () {
-                                            if (isFinished) {
-                                              _controller.seekTo(Duration.zero);
-                                              _controller.play();
-                                            } else {
-                                              setState(() {
-                                                _controller.value.isPlaying
-                                                    ? _controller.pause()
-                                                    : _controller.play();
-                                              });
-                                            }
-                                            _onInteraction();
-                                          },
-                                          child: Container(
-                                            padding: const EdgeInsets.all(16),
-                                            decoration: const BoxDecoration(
-                                              color: Colors.black45,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: Icon(
-                                              isFinished
-                                                  ? Icons.replay_rounded
-                                                  : (_controller.value.isPlaying
-                                                      ? Icons.pause_rounded
-                                                      : Icons.play_arrow_rounded),
-                                              color: Colors.white,
-                                              size: 50,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      Positioned(
-                                        bottom: 0,
-                                        left: 0,
-                                        right: 0,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(12),
-                                          decoration: const BoxDecoration(
-                                            gradient: LinearGradient(
-                                              colors: [
-                                                Colors.transparent,
-                                                Colors.black87
-                                              ],
-                                              begin: Alignment.topCenter,
-                                              end: Alignment.bottomCenter,
-                                            ),
-                                          ),
-                                          child: _buildProgressBar(),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
                       ),
-                      // Close Button
-                      Positioned(
-                        top: 20,
-                        right: 20,
-                        child: GestureDetector(
-                          onTap: () => Navigator.pop(context),
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: const BoxDecoration(
-                              color: Colors.black45,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.close_rounded,
-                                color: Colors.white, size: 24),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      value,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                  ],
                 ),
-                // Content Section
-                Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            "2024",
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.7),
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                  color: Colors.white.withOpacity(0.5)),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              "HD",
-                              style:
-                                  TextStyle(color: Colors.white, fontSize: 10),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            "Portfolio Project",
-                            style: TextStyle(
-                              color: Colors.cyanAccent.withOpacity(0.8),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        widget.title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: -1,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        "This is a highlight from my professional work history. "
-                        "Developed using Flutter for high-performance cross-platform delivery, "
-                        "this project was successfully released on both Play Store and App Store. "
-                        "It features complex state management, custom animations, and seamless external API integrations.",
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.8),
-                          fontSize: 16,
-                          height: 1.6,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      const _DetailRow(label: "Genre:", value: "App Development, UI/UX, Flutter"),
-                      const _DetailRow(label: "Role:", value: "Lead Mobile Developer"),
-                      const _DetailRow(label: "Impact:", value: "10k+ Downloads, 4.8 Rating"),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+              const FaIcon(
+                FontAwesomeIcons.arrowUpRightFromSquare,
+                color: _accent,
+                size: 15,
+              ),
+            ],
           ),
         ),
       ),
     );
   }
-
-  Widget _buildProgressBar() {
-    return VideoProgressIndicator(
-      _controller,
-      allowScrubbing: true,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      colors: const VideoProgressColors(
-        playedColor: Colors.cyanAccent,
-        bufferedColor: Colors.white24,
-        backgroundColor: Colors.white10,
-      ),
-    );
-  }
 }
 
-class _DetailRow extends StatelessWidget {
+class _HeroProof extends StatelessWidget {
+  final FaIconData icon;
   final String label;
-  final String value;
-  const _DetailRow({required this.label, required this.value});
+  const _HeroProof({required this.icon, required this.label});
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
+  Widget build(BuildContext context) => SizedBox(
+    width: 210,
+    child: Row(
+      children: [
+        SizedBox(
+          width: 20,
+          child: Center(
+            child: FaIcon(icon, color: const Color(0xFF67D4FF), size: 15),
+          ),
+        ),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Text(
             label,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.4),
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CarouselNavButton extends StatefulWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _CarouselNavButton({required this.icon, required this.onTap});
-
-  @override
-  State<_CarouselNavButton> createState() => _CarouselNavButtonState();
-}
-
-class _CarouselNavButtonState extends State<_CarouselNavButton> {
-  bool _isHovered = false;
-  bool _isPressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        onTapDown: (_) => setState(() => _isPressed = true),
-        onTapUp: (_) => setState(() => _isPressed = false),
-        onTapCancel: () => setState(() => _isPressed = false),
-        onTap: widget.onTap,
-        child: AnimatedScale(
-          scale: _isPressed ? 0.85 : (_isHovered ? 1.2 : 1.0),
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutCubic,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _isHovered
-                  ? Colors.cyanAccent.withOpacity(0.2)
-                  : Colors.black.withOpacity(0.3),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: _isHovered
-                    ? Colors.cyanAccent.withOpacity(0.5)
-                    : Colors.white10,
-                width: 1.5,
-              ),
-              boxShadow: _isHovered
-                  ? [
-                      BoxShadow(
-                        color: Colors.cyanAccent.withOpacity(0.3),
-                        blurRadius: 15,
-                        spreadRadius: 2,
-                      ),
-                    ]
-                  : [],
-            ),
-            child: Icon(
-              widget.icon,
-              color: _isHovered
-                  ? Colors.cyanAccent
-                  : Colors.white.withOpacity(0.8),
-              size: 28,
+            style: const TextStyle(
+              color: Color(0xFFB8C8DA),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
-      ),
-    );
-  }
+      ],
+    ),
+  );
 }
 
 class _AnimatedScrollIndicator extends StatefulWidget {
@@ -1721,7 +1247,9 @@ class _AnimatedScrollIndicator extends StatefulWidget {
 }
 
 class _AnimatedScrollIndicatorState extends State<_AnimatedScrollIndicator>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        AmbientAware<_AnimatedScrollIndicator> {
   bool _isHovered = false;
   bool _isPressed = false;
   late AnimationController _pulseController;
@@ -1732,7 +1260,24 @@ class _AnimatedScrollIndicatorState extends State<_AnimatedScrollIndicator>
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 1),
-    )..repeat(reverse: true);
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncPulse();
+  }
+
+  @override
+  void onActiveChanged(bool active) => _syncPulse();
+
+  void _syncPulse() {
+    if (MediaQuery.disableAnimationsOf(context) || !isActive) {
+      _pulseController.stop();
+    } else if (!_pulseController.isAnimating) {
+      _pulseController.repeat(reverse: true);
+    }
   }
 
   @override
@@ -1764,21 +1309,14 @@ class _AnimatedScrollIndicatorState extends State<_AnimatedScrollIndicator>
               offset: Offset(0, pulse),
               child: Transform.scale(
                 scale: scale,
-                child: Opacity(
-                  opacity: _isHovered ? 1.0 : 0.8,
-                  child: Icon(
-                    Icons.keyboard_double_arrow_down_rounded,
-                    color: _isHovered ? Colors.cyanAccent : Colors.white,
-                    size: 40,
-                    shadows: _isHovered
-                        ? [
-                            BoxShadow(
-                              color: Colors.cyanAccent.withOpacity(0.5),
-                              blurRadius: 15,
-                            ),
-                          ]
-                        : [],
-                  ),
+                // Alpha lives in the colour: an Opacity widget would force an
+                // offscreen layer on every frame of the pulse.
+                child: FaIcon(
+                  FontAwesomeIcons.anglesDown,
+                  color: _isHovered
+                      ? Colors.cyanAccent
+                      : Colors.white.withValues(alpha: 0.8),
+                  size: 40,
                 ),
               ),
             );
@@ -1812,7 +1350,7 @@ class _AnimatedBackToTopState extends State<_AnimatedBackToTop> {
         onTapUp: (_) => setState(() => _isPressed = false),
         onTapCancel: () => setState(() => _isPressed = false),
         onTap: () {
-          homeState?._pageController.animateToPage(
+          homeState?._animateToPage(
             0,
             duration: const Duration(seconds: 1),
             curve: Curves.easeInOutExpo,
@@ -1828,25 +1366,25 @@ class _AnimatedBackToTopState extends State<_AnimatedBackToTop> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: _isHovered
-                      ? Colors.white.withOpacity(0.1)
+                      ? Colors.white.withValues(alpha: 0.1)
                       : Colors.transparent,
                   border: Border.all(
                     color: _isHovered
-                        ? Colors.white.withOpacity(0.5)
+                        ? Colors.white.withValues(alpha: 0.5)
                         : Colors.white24,
                   ),
                   shape: BoxShape.circle,
                   boxShadow: _isHovered
                       ? [
                           BoxShadow(
-                            color: Colors.white.withOpacity(0.1),
+                            color: Colors.white.withValues(alpha: 0.1),
                             blurRadius: 15,
                           ),
                         ]
                       : [],
                 ),
-                child: Icon(
-                  Icons.keyboard_double_arrow_up_rounded,
+                child: FaIcon(
+                  FontAwesomeIcons.anglesUp,
                   color: _isHovered ? Colors.white : Colors.white70,
                   size: 28,
                 ),
@@ -1867,135 +1405,5 @@ class _AnimatedBackToTopState extends State<_AnimatedBackToTop> {
         ),
       ),
     );
-  }
-}
-
-class _VideoCard extends StatefulWidget {
-  final String assetPath;
-  final bool isCurrent;
-
-  const _VideoCard({required this.assetPath, required this.isCurrent});
-
-  @override
-  State<_VideoCard> createState() => _VideoCardState();
-}
-
-class _VideoCardState extends State<_VideoCard> {
-  late VideoPlayerController _controller;
-  bool _initialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeController();
-  }
-
-  void _initializeController() {
-    _controller = VideoPlayerController.asset(widget.assetPath)
-      ..initialize().then((_) {
-        if (mounted) {
-          setState(() {
-            _initialized = true;
-            _controller.setLooping(true);
-            _controller.setVolume(0); // Muted for auto-play
-            if (widget.isCurrent) {
-              _controller.play();
-            }
-          });
-        }
-      });
-  }
-
-  @override
-  void didUpdateWidget(_VideoCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_initialized) {
-      if (widget.isCurrent) {
-        _controller.play();
-      } else {
-        _controller.pause();
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_initialized) {
-      return Container(
-        color: Colors.black26,
-        child: const Center(
-          child: CircularProgressIndicator(
-            color: Colors.white24,
-            strokeWidth: 2,
-          ),
-        ),
-      );
-    }
-
-    return FadeInWidget(
-      child: Stack(
-        children: [
-          SizedBox.expand(
-            child: FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: _controller.value.size.width,
-                height: _controller.value.size.height,
-                child: VideoPlayer(_controller),
-              ),
-            ),
-          ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.35),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class FadeInWidget extends StatefulWidget {
-  final Widget child;
-  const FadeInWidget({required this.child});
-
-  @override
-  _FadeInWidgetState createState() => _FadeInWidgetState();
-}
-
-class _FadeInWidgetState extends State<FadeInWidget>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    );
-    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(opacity: _animation, child: widget.child);
   }
 }

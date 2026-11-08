@@ -19,9 +19,15 @@ dependencies:
   url_launcher: ^6.3.2
   webview_flutter_web: ^0.2.3+4
   video_player: ^2.8.2
+  flutter_animate: ^4.5.2
+  font_awesome_flutter: ^11.0.0
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_driver:
     sdk: flutter
   flutter_lints: ^6.0.0
 
@@ -29,10 +35,20 @@ flutter:
   uses-material-design: true
   assets:
     - assets/img/photo_profile.jpg
-    - assets/img/bg_portofolio.jpg
-    - assets/img/dekstop_profile.png
-    - assets/img/
-    - assets/img/svg/
+    - assets/img/durioo_poster.jpg
+    - assets/img/showcase_poster.jpg
+    - assets/img/portfolio/
     - assets/svg/
     - assets/svg/skill/
     - assets/video/
+  fonts:
+    - family: Carlito
+      fonts:
+        - asset: assets/fonts/Carlito-Regular.ttf
+        - asset: assets/fonts/Carlito-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Carlito-Italic.ttf
+          style: italic
+        - asset: assets/fonts/Carlito-BoldItalic.ttf
+          weight: 700
+          style: italic
