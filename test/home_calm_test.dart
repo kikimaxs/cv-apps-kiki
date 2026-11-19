@@ -19,7 +19,7 @@ void main() {
       await tester.pumpWidget(const MaterialApp(home: HomeMain()));
       await tester.pump(const Duration(seconds: 1));
 
-      // Just opened: ambient animations (aurora, orbit, marquee, ...) run.
+      // Just opened: ambient animations (aurora, orbit, ...) run.
       expect(
         tester.binding.transientCallbackCount,
         greaterThan(0),

@@ -5,8 +5,10 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 const _cyan = Color(0xFF67D4FF);
 const _violet = Color(0xFFB49BFF);
@@ -57,7 +59,7 @@ const bool kCalmMode = bool.fromEnvironment('CALM_MODE', defaultValue: true);
 
 /// Tracks whether the visitor is interacting with the page.
 ///
-/// Endless "ambient" animations (aurora, orbit, marquee, autoplay, pulses) only
+/// Endless "ambient" animations (aurora, orbit, autoplay, pulses) only
 /// run while it is [awake]. After [idleAfter] without any pointer/touch/scroll
 /// input the page goes calm: every ticker stops, Flutter stops producing
 /// frames and CPU/GPU drop to ~0 (no fan noise, no battery drain). Any input
@@ -208,7 +210,7 @@ mixin AmbientAware<T extends StatefulWidget> on State<T> {
 // * Everything that animates forever is driven by ONE controller/ticker and
 //   paints through a CustomPainter or a Flow/Transform, so frames only
 //   repaint: no widget rebuilds and no relayout.
-// * Static layers (grid, rings, marquee row) sit in their own RepaintBoundary
+// * Static layers (grid, rings) sit in their own RepaintBoundary
 //   and are rasterised once.
 // * No BackdropFilter, ImageFiltered blur, ShaderMask or BoxShadow that
 //   animates: those force expensive offscreen passes on low-end GPUs.
@@ -673,30 +675,129 @@ class AnimatedHeadline extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Hero orbit (replaces the portrait)
+// Hero orbit: a toy the visitor plays with. Nothing moves on its own except
+// a short welcome spin; every other motion comes from a drag, fling or tap,
+// then eases to a full stop and the ticker switches off.
 // ---------------------------------------------------------------------------
+
+class _Tech {
+  final String name;
+  final String asset;
+
+  const _Tech(this.name, this.asset);
+}
+
+const _innerTech = [
+  _Tech('Flutter', 'flutter-svgrepo-com.svg'),
+  _Tech('React', 'react-svgrepo-com.svg'),
+  _Tech('Kotlin', 'kotlin-1-logo-svgrepo-com.svg'),
+];
+
+const _outerTech = [
+  _Tech('Android', 'android-svgrepo-com.svg'),
+  _Tech('Swift', 'swift-svgrepo-com.svg'),
+  _Tech('JavaScript', 'js-svgrepo-com.svg'),
+  _Tech('Tailwind', 'tailwind-svgrepo-com.svg'),
+  _Tech('Figma', 'figma-svgrepo-com.svg'),
+  _Tech('Next.js', 'next-js-svgrepo-com.svg'),
+];
+
+class _Ripple {
+  final Offset center;
+  final double startRadius;
+  final Color color;
+  double progress = 0;
+
+  _Ripple(this.center, this.startRadius, this.color);
+}
+
+/// Everything that moves in the orbit. Advanced by one ticker that only runs
+/// while something is still moving ([settled] is false).
+class _OrbitMotion extends ChangeNotifier {
+  /// Exponential spin-down per second: a hard fling glides ~2s, then stops.
+  static const friction = 1.8;
+  static const maxSpeed = 16.0; // rad/s
+  static const restSpeed = 0.04; // rad/s, imperceptible, so stopping is smooth
+  static const popSeconds = 0.6;
+  static const rippleSeconds = 0.85;
+
+  double angle = 0;
+  double velocity = 0;
+  bool dragging = false;
+
+  double corePop = 1; // 0..1, 1 = at rest
+  int? poppedLogo;
+  double logoPop = 1;
+  final ripples = <_Ripple>[];
+
+  /// 0..1 of the top speed; drives the rings' glow.
+  double get speed => (velocity.abs() / maxSpeed).clamp(0.0, 1.0);
+
+  bool get settled =>
+      velocity == 0 && corePop >= 1 && logoPop >= 1 && ripples.isEmpty;
+
+  double get spinDirection => velocity < 0 ? -1 : 1;
+
+  void addSpin(double radPerSecond) {
+    velocity = (velocity + radPerSecond).clamp(-maxSpeed, maxSpeed);
+  }
+
+  void step(double dt) {
+    if (!dragging && velocity != 0) {
+      // Exact solution of v' = -friction * v, so any frame length (even a
+      // dropped frame) lands exactly where a smooth 120 Hz run would.
+      final decay = math.exp(-friction * dt);
+      angle += velocity * (1 - decay) / friction;
+      velocity *= decay;
+      if (velocity.abs() < restSpeed) velocity = 0;
+    }
+    if (corePop < 1) corePop = math.min(1, corePop + dt / popSeconds);
+    if (logoPop < 1) logoPop = math.min(1, logoPop + dt / popSeconds);
+    for (var i = ripples.length - 1; i >= 0; i--) {
+      final r = ripples[i];
+      r.progress += dt / rippleSeconds;
+      if (r.progress >= 1) ripples.removeAt(i);
+    }
+    notifyListeners();
+  }
+
+  void changed() => notifyListeners();
+
+  /// Squash-and-bounce: a quick press-in, overshoot, then rest at exactly 1.
+  static double bounce(double p, double amount) =>
+      p >= 1 ? 1 : 1 + amount * math.sin(p * 2.4 * math.pi) * (1 - p) * (1 - p);
+}
 
 class _Orbiter {
   final double radius;
   final double diameter;
-  final double turns;
+  final double speedFactor;
   final double phase;
 
-  const _Orbiter(this.radius, this.diameter, this.turns, this.phase);
+  const _Orbiter(this.radius, this.diameter, this.speedFactor, this.phase);
+
+  Offset centerAt(double size, double angle) {
+    final a = 2 * math.pi * phase + angle * speedFactor;
+    return Offset(
+      size / 2 + radius * math.cos(a),
+      size / 2 + radius * math.sin(a),
+    );
+  }
 }
 
-/// Positions each child on a circle. Only [paintChildren] runs per frame, so
-/// there is no rebuild and no relayout while the logos orbit.
+/// Positions each logo on its ring. Only [paintChildren] runs per frame, so
+/// spinning never rebuilds or relayouts. Flow also hit-tests children with
+/// these transforms, so the moving logos stay tappable.
 class _OrbitDelegate extends FlowDelegate {
-  final Animation<double> animation;
+  final _OrbitMotion motion;
   final double size;
   final List<_Orbiter> orbiters;
 
   _OrbitDelegate({
-    required this.animation,
+    required this.motion,
     required this.size,
     required this.orbiters,
-  }) : super(repaint: animation);
+  }) : super(repaint: motion);
 
   @override
   Size getSize(BoxConstraints constraints) => Size.square(size);
@@ -707,18 +808,17 @@ class _OrbitDelegate extends FlowDelegate {
 
   @override
   void paintChildren(FlowPaintingContext context) {
-    final c = size / 2;
-    final t = animation.value;
     for (var i = 0; i < orbiters.length; i++) {
       final o = orbiters[i];
-      final angle = 2 * math.pi * (o.phase + t * o.turns);
+      final c = o.centerAt(size, motion.angle);
+      final scale = i == motion.poppedLogo
+          ? _OrbitMotion.bounce(motion.logoPop, 0.42)
+          : 1.0;
+      final half = o.diameter * scale / 2;
       context.paintChild(
         i,
-        transform: Matrix4.translationValues(
-          c + o.radius * math.cos(angle) - o.diameter / 2,
-          c + o.radius * math.sin(angle) - o.diameter / 2,
-          0,
-        ),
+        transform: Matrix4.translationValues(c.dx - half, c.dy - half, 0)
+          ..scaleByDouble(scale, scale, 1, 1),
       );
     }
   }
@@ -727,7 +827,11 @@ class _OrbitDelegate extends FlowDelegate {
   bool shouldRepaint(_OrbitDelegate oldDelegate) => oldDelegate.size != size;
 }
 
-/// Technology logos orbiting a glowing core.
+/// Technology logos around a "K." core that the visitor can play with:
+/// * drag (any direction with a mouse, sideways on touch) to turn it, and
+///   let go to fling it; it glides and eases to a stop,
+/// * tap the core or empty space to give it a spin (taps add up),
+/// * tap a logo to make it pop and show its name in the core.
 class HeroOrbit extends StatefulWidget {
   final double size;
 
@@ -738,83 +842,232 @@ class HeroOrbit extends StatefulWidget {
 }
 
 class _HeroOrbitState extends State<HeroOrbit>
-    with SingleTickerProviderStateMixin, AmbientAware<HeroOrbit> {
-  // One 60s controller drives every orbiting element. All cycles below are
-  // whole numbers per 60s so the loop is seamless.
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 60),
-  );
+    with SingleTickerProviderStateMixin {
+  static const _welcomeSpin = 4.5; // rad/s
+  static const _tapSpin = 5.5; // rad/s per tap
+  static const _logoNudge = 2.2;
+  static const _nameShownFor = Duration(milliseconds: 1600);
 
-  static const _inner = [
-    'flutter-svgrepo-com.svg',
-    'react-svgrepo-com.svg',
-    'kotlin-1-logo-svgrepo-com.svg',
-  ];
-  static const _outer = [
-    'android-svgrepo-com.svg',
-    'swift-svgrepo-com.svg',
-    'js-svgrepo-com.svg',
-    'tailwind-svgrepo-com.svg',
-    'figma-svgrepo-com.svg',
-    'next-js-svgrepo-com.svg',
-  ];
+  final _motion = _OrbitMotion();
+  final _picked = ValueNotifier<_Tech?>(null);
+  final _played = ValueNotifier<bool>(false);
+  late final Ticker _ticker = createTicker(_onTick);
+  Duration _lastTick = Duration.zero;
+  Timer? _nameTimer;
+  bool _welcomed = false;
+
+  bool get _reducedMotion => _reduced(context);
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _syncAnimation();
-  }
-
-  @override
-  void onActiveChanged(bool active) => _syncAnimation();
-
-  void _syncAnimation() {
-    if (_reduced(context) || !isActive) {
-      _controller.stop();
-    } else if (!_controller.isAnimating) {
-      _controller.repeat();
+    if (!_welcomed) {
+      _welcomed = true;
+      // A short welcome spin hints that the orbit can move, then it rests.
+      if (!_reducedMotion) {
+        _motion.addSpin(_welcomeSpin);
+        _wake();
+      }
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _nameTimer?.cancel();
+    _ticker.dispose();
+    _motion.dispose();
+    _picked.dispose();
+    _played.dispose();
     super.dispose();
   }
 
-  Widget _bubble(String asset, double diameter, Color accent) {
-    return RepaintBoundary(
-      child: Container(
-        width: diameter,
-        height: diameter,
-        padding: EdgeInsets.all(diameter * 0.24),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: const Color(0xFFF2F6FC),
-          border: Border.all(color: accent.withValues(alpha: 0.45), width: 1.5),
+  void _wake() {
+    if (_ticker.isActive) return;
+    _lastTick = Duration.zero;
+    _ticker.start();
+  }
+
+  void _onTick(Duration elapsed) {
+    final dt = (elapsed - _lastTick).inMicroseconds / 1e6;
+    _lastTick = elapsed;
+    _motion.step(dt);
+    // While dragging, velocity is 0 and the finger moves the orbit directly,
+    // so this also stops the ticker mid-drag once pops/ripples are done.
+    if (_motion.settled) _ticker.stop();
+  }
+
+  void _markPlayed() {
+    if (!_played.value) _played.value = true;
+  }
+
+  Offset get _center => Offset(widget.size / 2, widget.size / 2);
+
+  void _onPanStart(DragStartDetails details) {
+    _markPlayed();
+    _motion
+      ..dragging = true
+      ..velocity = 0;
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    final now = details.localPosition - _center;
+    final before = now - details.delta;
+    // Too close to the centre the angle is unstable: ignore.
+    final minR = widget.size * 0.1;
+    if (now.distance < minR || before.distance < minR) return;
+    var d = now.direction - before.direction;
+    if (d > math.pi) d -= 2 * math.pi;
+    if (d < -math.pi) d += 2 * math.pi;
+    _motion
+      ..angle += d
+      ..changed();
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    _motion.dragging = false;
+    if (_reducedMotion) {
+      _motion.velocity = 0;
+      return;
+    }
+    // Angular velocity = tangential finger speed / radius.
+    final r = details.localPosition - _center;
+    final v = details.velocity.pixelsPerSecond;
+    final r2 = math.max(r.distanceSquared, math.pow(widget.size * 0.2, 2));
+    _motion.velocity = ((r.dx * v.dy - r.dy * v.dx) / r2).clamp(
+      -_OrbitMotion.maxSpeed,
+      _OrbitMotion.maxSpeed,
+    );
+    if (_motion.velocity.abs() < _OrbitMotion.restSpeed) _motion.velocity = 0;
+    _wake();
+  }
+
+  void _onSpinTap() {
+    _markPlayed();
+    if (_reducedMotion) return;
+    HapticFeedback.lightImpact();
+    _motion
+      ..addSpin(_tapSpin * _motion.spinDirection)
+      ..corePop = 0
+      ..ripples.add(_Ripple(_center, widget.size * 0.125, _cyan));
+    if (_motion.ripples.length > 4) _motion.ripples.removeAt(0);
+    _wake();
+  }
+
+  void _onLogoTap(int index, _Orbiter orbiter, _Tech tech, Color accent) {
+    _markPlayed();
+    HapticFeedback.selectionClick();
+    _picked.value = tech;
+    _nameTimer?.cancel();
+    _nameTimer = Timer(_nameShownFor, () => _picked.value = null);
+    if (_reducedMotion) return;
+    _motion
+      ..addSpin(_logoNudge * _motion.spinDirection)
+      ..poppedLogo = index
+      ..logoPop = 0
+      ..corePop = 0
+      ..ripples.add(
+        _Ripple(
+          orbiter.centerAt(widget.size, _motion.angle),
+          orbiter.diameter / 2,
+          accent,
         ),
-        child: SvgPicture.asset('assets/svg/skill/$asset'),
+      );
+    if (_motion.ripples.length > 4) _motion.ripples.removeAt(0);
+    _wake();
+  }
+
+  Widget _bubble(int index, _Orbiter orbiter, _Tech tech, Color accent) {
+    return Semantics(
+      button: true,
+      label: tech.name,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _onLogoTap(index, orbiter, tech, accent),
+          child: RepaintBoundary(
+            child: Container(
+              padding: EdgeInsets.all(orbiter.diameter * 0.24),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFFF2F6FC),
+                border: Border.all(
+                  color: accent.withValues(alpha: 0.45),
+                  width: 1.5,
+                ),
+              ),
+              child: SvgPicture.asset('assets/svg/skill/${tech.asset}'),
+            ),
+          ),
+        ),
       ),
+    );
+  }
+
+  Widget _coreLabel(double s, double coreD) {
+    return ValueListenableBuilder<_Tech?>(
+      valueListenable: _picked,
+      builder: (context, tech, _) {
+        final label = tech == null
+            ? Text(
+                'K.',
+                key: const ValueKey('K.'),
+                style: TextStyle(
+                  color: _base,
+                  fontSize: s * 0.095,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -1,
+                ),
+              )
+            : Padding(
+                key: ValueKey(tech.name),
+                padding: EdgeInsets.symmetric(horizontal: coreD * 0.12),
+                child: FittedBox(
+                  child: Text(
+                    tech.name,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: _base,
+                      fontSize: s * 0.05,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              );
+        if (_reducedMotion) return label;
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOutBack,
+          switchOutCurve: Curves.easeIn,
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(scale: animation, child: child),
+          ),
+          child: label,
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final s = widget.size;
-    final reduced = _reduced(context);
     final innerD = s * 0.15;
     final outerD = s * 0.13;
     final coreD = s * 0.25;
 
+    // Outer ring follows the finger 1:1; the inner ring turns faster for a
+    // bit of parallax.
     final orbiters = <_Orbiter>[
-      for (var i = 0; i < _inner.length; i++)
-        _Orbiter(s * 0.30, innerD, 3, i / _inner.length),
-      for (var i = 0; i < _outer.length; i++)
-        _Orbiter(s * 0.42, outerD, -2, i / _outer.length),
+      for (var i = 0; i < _innerTech.length; i++)
+        _Orbiter(s * 0.30, innerD, 1.5, i / _innerTech.length),
+      for (var i = 0; i < _outerTech.length; i++)
+        _Orbiter(s * 0.42, outerD, 1, i / _outerTech.length),
     ];
 
-    final core = RepaintBoundary(
+    final core = Semantics(
+      button: true,
+      label: 'Putar orbit',
       child: Container(
         width: coreD,
         height: coreD,
@@ -830,293 +1083,151 @@ class _HeroOrbitState extends State<HeroOrbit>
             BoxShadow(color: _cyan.withValues(alpha: 0.4), blurRadius: 36),
           ],
         ),
-        child: Text(
-          'K.',
-          style: TextStyle(
-            color: _base,
-            fontSize: s * 0.095,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -1,
+        child: _coreLabel(s, coreD),
+      ),
+    );
+
+    final toy = MouseRegion(
+      cursor: SystemMouseCursors.grab,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _onSpinTap,
+        onPanStart: _onPanStart,
+        onPanUpdate: _onPanUpdate,
+        onPanEnd: _onPanEnd,
+        onPanCancel: () => _motion.dragging = false,
+        child: SizedBox(
+          width: s,
+          height: s,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              RepaintBoundary(
+                child: CustomPaint(
+                  size: Size.square(s),
+                  painter: _RingsPainter(_motion, const [0.30, 0.42]),
+                ),
+              ),
+              RepaintBoundary(
+                child: AnimatedBuilder(
+                  animation: _motion,
+                  child: core,
+                  builder: (context, child) => Transform.scale(
+                    scale: _OrbitMotion.bounce(_motion.corePop, -0.14),
+                    child: child,
+                  ),
+                ),
+              ),
+              Flow(
+                delegate: _OrbitDelegate(
+                  motion: _motion,
+                  size: s,
+                  orbiters: orbiters,
+                ),
+                children: [
+                  for (var i = 0; i < orbiters.length; i++)
+                    _bubble(
+                      i,
+                      orbiters[i],
+                      i < _innerTech.length
+                          ? _innerTech[i]
+                          : _outerTech[i - _innerTech.length],
+                      i < _innerTech.length ? _cyan : _violet,
+                    ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
     );
 
+    // Hint under the toy; it fades out once the visitor has played (the
+    // space stays reserved so nothing jumps).
+    final hint = ValueListenableBuilder<bool>(
+      valueListenable: _played,
+      builder: (context, played, child) => AnimatedOpacity(
+        opacity: played ? 0 : 1,
+        duration: const Duration(milliseconds: 400),
+        child: child,
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FaIcon(FontAwesomeIcons.handPointer, size: 12, color: _cyan),
+          SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              'Geser untuk memutar · ketuk logonya',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Color(0xFF9FB3C8),
+                fontSize: 13,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
     return RepaintBoundary(
-      child: SizedBox(
-        width: s,
-        height: s,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            RepaintBoundary(
-              child: CustomPaint(
-                size: Size.square(s),
-                painter: const _RingsPainter([0.30, 0.42]),
-              ),
-            ),
-            if (!reduced)
-              RepaintBoundary(
-                child: CustomPaint(
-                  size: Size.square(s),
-                  painter: _RipplePainter(_controller, coreD / 2),
-                ),
-              ),
-            reduced
-                ? core
-                : AnimatedBuilder(
-                    animation: _controller,
-                    child: core,
-                    builder: (context, child) {
-                      // 15 pulses per 60s => one every 4s.
-                      final pulse =
-                          1 +
-                          0.035 *
-                              (1 + math.sin(_controller.value * 30 * math.pi));
-                      return Transform.scale(scale: pulse, child: child);
-                    },
-                  ),
-            Flow(
-              delegate: _OrbitDelegate(
-                animation: _controller,
-                size: s,
-                orbiters: orbiters,
-              ),
-              children: [
-                for (var i = 0; i < _inner.length; i++)
-                  _bubble(_inner[i], innerD, _cyan),
-                for (var i = 0; i < _outer.length; i++)
-                  _bubble(_outer[i], outerD, _violet),
-              ],
-            ),
-          ],
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [toy, const SizedBox(height: 12), hint],
       ),
     );
   }
 }
 
+/// Soft halo, the two rings and tap ripples in one pass. Repaints only while
+/// the orbit is moving; the rings brighten with spin speed.
 class _RingsPainter extends CustomPainter {
+  final _OrbitMotion motion;
   final List<double> radii;
 
-  const _RingsPainter(this.radii);
+  _RingsPainter(this.motion, this.radii) : super(repaint: motion);
 
   @override
   void paint(Canvas canvas, Size size) {
     final c = size.center(Offset.zero);
+    final speed = motion.speed;
     canvas.drawCircle(
       c,
       size.width * 0.5,
       Paint()
         ..shader = RadialGradient(
-          colors: [_cyan.withValues(alpha: 0.07), _cyan.withValues(alpha: 0)],
+          colors: [
+            _cyan.withValues(alpha: 0.07 + 0.10 * speed),
+            _cyan.withValues(alpha: 0),
+          ],
         ).createShader(Rect.fromCircle(center: c, radius: size.width * 0.5)),
     );
     final stroke = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1
-      ..color = Colors.white.withValues(alpha: 0.11);
+      ..strokeWidth = 1 + speed
+      ..color = Color.lerp(
+        Colors.white.withValues(alpha: 0.11),
+        _cyan.withValues(alpha: 0.55),
+        speed,
+      )!;
     for (final r in radii) {
       canvas.drawCircle(c, size.width * r, stroke);
     }
-  }
-
-  @override
-  bool shouldRepaint(_RingsPainter oldDelegate) => false;
-}
-
-/// Two rings expanding from the core, drawn in a single painter pass.
-class _RipplePainter extends CustomPainter {
-  final Animation<double> t;
-  final double coreRadius;
-
-  _RipplePainter(this.t, this.coreRadius) : super(repaint: t);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = size.center(Offset.zero);
-    for (final offset in const [0.0, 0.5]) {
-      final p = (t.value * 15 + offset) % 1.0;
+    for (final ripple in motion.ripples) {
+      final p = Curves.easeOutCubic.transform(ripple.progress);
       canvas.drawCircle(
-        c,
-        coreRadius * (1 + 2.6 * p),
+        ripple.center,
+        ripple.startRadius * (1 + 1.6 * p),
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5
-          ..color = _cyan.withValues(alpha: 0.5 * (1 - p)),
+          ..strokeWidth = 2 * (1 - p) + 0.5
+          ..color = ripple.color.withValues(alpha: 0.6 * (1 - ripple.progress)),
       );
     }
   }
 
   @override
-  bool shouldRepaint(_RipplePainter oldDelegate) => false;
-}
-
-// ---------------------------------------------------------------------------
-// Tech marquee
-// ---------------------------------------------------------------------------
-
-/// Endlessly scrolling strip of technology pills. The row is built once and
-/// only translated each frame (no list layout, no shader mask).
-class TechMarquee extends StatefulWidget {
-  const TechMarquee({super.key});
-
-  @override
-  State<TechMarquee> createState() => _TechMarqueeState();
-}
-
-class _TechMarqueeState extends State<TechMarquee>
-    with SingleTickerProviderStateMixin, AmbientAware<TechMarquee> {
-  static const _items = [
-    ('Flutter', 'flutter-svgrepo-com.svg'),
-    ('Android', 'android-svgrepo-com.svg'),
-    ('iOS', 'ios-svgrepo-com.svg'),
-    ('React', 'react-svgrepo-com.svg'),
-    ('Next.js', 'next-js-svgrepo-com.svg'),
-    ('JavaScript', 'js-svgrepo-com.svg'),
-    ('Kotlin', 'kotlin-1-logo-svgrepo-com.svg'),
-    ('Swift', 'swift-svgrepo-com.svg'),
-    ('Tailwind', 'tailwind-svgrepo-com.svg'),
-    ('Figma', 'figma-svgrepo-com.svg'),
-    ('MySQL', 'mysql-logo-svgrepo-com.svg'),
-    ('Sentry', 'sentry-svgrepo-com.svg'),
-  ];
-
-  static const _pillWidth = 150.0;
-  static const _gap = 12.0;
-  static const _stride = _pillWidth + _gap;
-  static const _setWidth = _stride * 12;
-  static const _pxPerSecond = 42.0;
-
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: Duration(milliseconds: (_setWidth / _pxPerSecond * 1000).round()),
-  );
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _syncAnimation();
-  }
-
-  @override
-  void onActiveChanged(bool active) => _syncAnimation();
-
-  void _syncAnimation() {
-    if (_reduced(context) || !isActive) {
-      _controller.stop();
-    } else if (!_controller.isAnimating) {
-      _controller.repeat();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Widget _pill((String, String) item) {
-    return Padding(
-      padding: const EdgeInsets.only(right: _gap),
-      child: Container(
-        width: _pillWidth,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(40),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 28,
-              height: 28,
-              padding: const EdgeInsets.all(6),
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color(0xFFF2F6FC),
-              ),
-              child: SvgPicture.asset('assets/svg/skill/${item.$2}'),
-            ),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Text(
-                item.$1,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _edge({required bool left}) {
-    return Positioned(
-      left: left ? 0 : null,
-      right: left ? null : 0,
-      top: 0,
-      bottom: 0,
-      width: 56,
-      child: IgnorePointer(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: left ? Alignment.centerLeft : Alignment.centerRight,
-              end: left ? Alignment.centerRight : Alignment.centerLeft,
-              colors: [_base, _base.withValues(alpha: 0)],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final row = RepaintBoundary(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var copy = 0; copy < 2; copy++)
-            for (final item in _items) _pill(item),
-        ],
-      ),
-    );
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: ClipRect(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: OverflowBox(
-                alignment: Alignment.centerLeft,
-                minWidth: 0,
-                maxWidth: double.infinity,
-                child: AnimatedBuilder(
-                  animation: _controller,
-                  child: row,
-                  builder: (context, child) => Transform.translate(
-                    offset: Offset(-_controller.value * _setWidth, 0),
-                    child: child,
-                  ),
-                ),
-              ),
-            ),
-            _edge(left: true),
-            _edge(left: false),
-          ],
-        ),
-      ),
-    );
-  }
+  bool shouldRepaint(_RingsPainter oldDelegate) => false;
 }

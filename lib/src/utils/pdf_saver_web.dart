@@ -1,10 +1,18 @@
+import 'dart:js_interop';
 import 'dart:typed_data';
-import 'dart:html' as html;
 
+import 'package:web/web.dart' as web;
+
+/// Downloads [bytes] as a PDF named [filename], through a temporary object URL.
 Future<void> savePdf(Uint8List bytes, String filename) async {
-  final blob = html.Blob([bytes], 'application/pdf');
-  final url = html.Url.createObjectUrlFromBlob(blob);
-  final anchor = html.AnchorElement(href: url)..download = filename;
+  final blob = web.Blob(
+    <web.BlobPart>[bytes.toJS].toJS,
+    web.BlobPropertyBag(type: 'application/pdf'),
+  );
+  final url = web.URL.createObjectURL(blob);
+  final anchor = web.document.createElement('a') as web.HTMLAnchorElement;
+  anchor.href = url;
+  anchor.download = filename;
   anchor.click();
-  html.Url.revokeObjectUrl(url);
+  web.URL.revokeObjectURL(url);
 }

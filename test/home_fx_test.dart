@@ -28,7 +28,6 @@ void main() {
                       style: TextStyle(fontSize: 32, color: Colors.white),
                     ),
                     HeroOrbit(size: width < 400 ? 280 : 420),
-                    const TechMarquee(),
                     const Reveal(child: Text('revealed')),
                   ],
                 ),

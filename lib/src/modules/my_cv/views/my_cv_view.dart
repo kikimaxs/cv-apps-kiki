@@ -5,7 +5,6 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:ui' as ui;
-import 'dart:typed_data';
 import 'package:cv_apps/src/utils/pdf_saver.dart';
 import 'package:cv_apps/src/components/icon_svg.dart';
 import 'package:go_router/go_router.dart';
@@ -19,6 +18,33 @@ enum _PdfQuality {
   final String label;
   const _PdfQuality(this.pixelRatio, this.label);
 }
+
+// One column for the whole CV. Every block starts and ends on the same edges
+// at every width, and nothing sits beside another block, so no empty space is
+// left next to a short panel.
+const double _kWideBreakpoint = 900;
+const double _kMaxCardWidth = 900;
+const double _kCardRadius = 16;
+const double _kWideInset = 24;
+const double _kColumnGap = 24;
+// Entry headings show the date on the title's line only when the text column
+// is this wide; below it, every entry puts the date under the title.
+const double _kSideBySideHeadingWidth = 760;
+const double _kContactListWidth = 300;
+const Color _kPanelColor = Color(0xFF1C3144);
+const Color _kPillColor = Color(0xFF2E3E52);
+
+/// Text and sizes shrink a little on narrow phones so that every line fits
+/// without truncation. From 520px up the CV is shown at its full size.
+double _cvScale(double width) {
+  if (width < 360) return 0.9;
+  if (width < 420) return 0.94;
+  if (width < 520) return 0.97;
+  return 1.0;
+}
+
+/// Space between the timeline rail and the text of an entry.
+double _railGap(double scale) => 14 * scale;
 
 class MyCvView extends StatelessWidget {
   const MyCvView({super.key});
@@ -113,206 +139,20 @@ class MyCvView extends StatelessWidget {
                   ),
                   child: Stack(
                     children: [
-                      Positioned(
+                      const Positioned(
                         right: -160,
                         top: -140,
-                        child: Container(
-                          width: 420,
-                          height: 420,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: RadialGradient(
-                              colors: [
-                                Colors.white.withOpacity(0.24),
-                                Colors.white.withOpacity(0.0),
-                              ],
-                            ),
-                          ),
-                        ),
+                        child: _Glow(size: 420, alpha: 0.24),
                       ),
-                      Positioned(
+                      const Positioned(
                         left: -170,
                         bottom: -180,
-                        child: Container(
-                          width: 440,
-                          height: 440,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: RadialGradient(
-                              colors: [
-                                Colors.white.withOpacity(0.18),
-                                Colors.white.withOpacity(0.0),
-                              ],
-                            ),
-                          ),
-                        ),
+                        child: _Glow(size: 440, alpha: 0.18),
                       ),
                       SafeArea(
                         child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final isWide = constraints.maxWidth >= 900;
-                            final double w = constraints.maxWidth;
-                            final double scale = w <= 320
-                                ? 0.75
-                                : w < 360
-                                ? 0.80
-                                : w < 420
-                                ? 0.85
-                                : w < 480
-                                ? 0.88
-                                : w < 540
-                                ? 0.90
-                                : w < 640
-                                ? 0.93
-                                : w < 700
-                                ? 0.95
-                                : 1.0;
-                            return SingleChildScrollView(
-                              child: Center(
-                                child: ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 1100,
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: 16,
-                                      right: 16,
-                                      top: 0,
-                                      bottom: 16,
-                                    ),
-                                    child: MediaQuery(
-                                      data: MediaQuery.of(context).copyWith(
-                                        textScaler: TextScaler.linear(scale),
-                                      ),
-                                      child: RepaintBoundary(
-                                        key: _cvBoundaryKey,
-                                        child: Container(
-                                          decoration: const BoxDecoration(
-                                            gradient: LinearGradient(
-                                              colors: [
-                                                Color(0xFF1A2F43),
-                                                Color(0xFF203A53),
-                                                Color(0xFF16283A),
-                                              ],
-                                              begin: Alignment.topLeft,
-                                              end: Alignment.bottomRight,
-                                            ),
-                                          ),
-                                          child: Stack(
-                                            clipBehavior: Clip.none,
-                                            children: [
-                                              Positioned(
-                                                right: -160,
-                                                top: -140,
-                                                child: Container(
-                                                  width: 420,
-                                                  height: 420,
-                                                  decoration: BoxDecoration(
-                                                    shape: BoxShape.circle,
-                                                    gradient: RadialGradient(
-                                                      colors: [
-                                                        Colors.white
-                                                            .withOpacity(0.24),
-                                                        Colors.white
-                                                            .withOpacity(0.0),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                              Positioned(
-                                                left: -170,
-                                                bottom: -180,
-                                                child: Container(
-                                                  width: 440,
-                                                  height: 440,
-                                                  decoration: BoxDecoration(
-                                                    shape: BoxShape.circle,
-                                                    gradient: RadialGradient(
-                                                      colors: [
-                                                        Colors.white
-                                                            .withOpacity(0.18),
-                                                        Colors.white
-                                                            .withOpacity(0.0),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                              Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  _Header(scale: scale),
-                                                  const SizedBox(height: 16),
-                                                  isWide
-                                                      ? Row(
-                                                          crossAxisAlignment:
-                                                              CrossAxisAlignment
-                                                                  .start,
-                                                          children: [
-                                                            Transform.translate(
-                                                              offset:
-                                                                  const Offset(
-                                                                    -16,
-                                                                    0,
-                                                                  ),
-                                                              child: SizedBox(
-                                                                width: 320,
-                                                                child:
-                                                                    _CvSidebar(
-                                                                      scale:
-                                                                          scale,
-                                                                    ),
-                                                              ),
-                                                            ),
-                                                            const SizedBox(
-                                                              width: 24,
-                                                            ),
-                                                            Expanded(
-                                                              child: _CvContent(
-                                                                isWide: isWide,
-                                                                scale: scale,
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        )
-                                                      : Column(
-                                                          crossAxisAlignment:
-                                                              CrossAxisAlignment
-                                                                  .start,
-                                                          children: [
-                                                            Transform.translate(
-                                                              offset:
-                                                                  const Offset(
-                                                                    -16,
-                                                                    0,
-                                                                  ),
-                                                              child: _CvSidebar(
-                                                                scale: scale,
-                                                              ),
-                                                            ),
-                                                            const SizedBox(
-                                                              height: 16,
-                                                            ),
-                                                            _CvContent(
-                                                              isWide: isWide,
-                                                              scale: scale,
-                                                            ),
-                                                          ],
-                                                        ),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
+                          builder: (context, constraints) =>
+                              _buildPage(context, constraints.maxWidth),
                         ),
                       ),
                     ],
@@ -320,6 +160,52 @@ class MyCvView extends StatelessWidget {
                 ),
                 if (exporting) _buildExportProgressOverlay(context),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPage(BuildContext context, double w) {
+    final bool isWide = w >= _kWideBreakpoint;
+    final double scale = _cvScale(w);
+    return SingleChildScrollView(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: _kMaxCardWidth),
+          child: Padding(
+            padding: EdgeInsets.all(isWide ? _kWideInset : 10.0),
+            child: MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(scale),
+              ),
+              child: RepaintBoundary(
+                key: _cvBoundaryKey,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xFF1A2F43),
+                        Color(0xFF203A53),
+                        Color(0xFF16283A),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _Header(isWide: isWide, scale: scale),
+                      SizedBox(height: 16 * scale),
+                      _SkillsPanel(isWide: isWide, scale: scale),
+                      SizedBox(height: 16 * scale),
+                      _CvContent(isWide: isWide, scale: scale),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -451,439 +337,195 @@ class MyCvView extends StatelessWidget {
       ),
     );
   }
-
-  pw.Widget _pdfExperience({
-    required String company,
-    required String period,
-    required String role,
-    required List<String> points,
-  }) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Row(
-          children: [
-            pw.Expanded(
-              child: pw.Text(
-                company,
-                style: pw.TextStyle(
-                  fontSize: 13,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-            ),
-            pw.Text(period, style: const pw.TextStyle(fontSize: 11)),
-          ],
-        ),
-        pw.SizedBox(height: 4),
-        pw.Text(
-          role,
-          style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
-        ),
-        pw.SizedBox(height: 4),
-        pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: points
-              .map(
-                (e) => pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(vertical: 1),
-                  child: pw.Row(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text('• ', style: const pw.TextStyle(fontSize: 11)),
-                      pw.Expanded(
-                        child: pw.Text(
-                          e,
-                          style: const pw.TextStyle(fontSize: 11),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-              .toList(),
-        ),
-      ],
-    );
-  }
-
-  pw.Widget _pdfProject({
-    required String name,
-    required String period,
-    required String summary,
-    required List<String> details,
-  }) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Row(
-          children: [
-            pw.Expanded(
-              child: pw.Text(
-                name,
-                style: pw.TextStyle(
-                  fontSize: 13,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-            ),
-            pw.Text(period, style: const pw.TextStyle(fontSize: 11)),
-          ],
-        ),
-        pw.SizedBox(height: 4),
-        pw.Text(summary, style: const pw.TextStyle(fontSize: 11)),
-        pw.SizedBox(height: 4),
-        pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: details
-              .map(
-                (e) => pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(vertical: 1),
-                  child: pw.Row(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text('• ', style: pw.TextStyle(fontSize: 11)),
-                      pw.Expanded(
-                        child: pw.Text(
-                          e,
-                          style: const pw.TextStyle(fontSize: 11),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-              .toList(),
-        ),
-      ],
-    );
-  }
-
-  pw.Widget _pdfEducation({
-    required String degree,
-    required String period,
-    required String school,
-    required String gpa,
-  }) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Row(
-          children: [
-            pw.Expanded(
-              child: pw.Text(
-                degree,
-                style: pw.TextStyle(
-                  fontSize: 13,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-            ),
-            pw.Text(period, style: const pw.TextStyle(fontSize: 11)),
-          ],
-        ),
-        pw.SizedBox(height: 4),
-        pw.Text(
-          school,
-          style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
-        ),
-        pw.SizedBox(height: 4),
-        pw.Text(gpa, style: const pw.TextStyle(fontSize: 11)),
-      ],
-    );
-  }
 }
 
-class _CvSidebar extends StatelessWidget {
-  final double scale;
-  const _CvSidebar({required this.scale});
-
-  Color get _bg => const Color(0xFF1C3144);
+class _Glow extends StatelessWidget {
+  final double size;
+  final double alpha;
+  const _Glow({required this.size, required this.alpha});
 
   @override
   Widget build(BuildContext context) {
-    final topShade = Color.alphaBlend(Colors.white.withOpacity(0.08), _bg);
-    final bottomShade = Color.alphaBlend(Colors.black.withOpacity(0.08), _bg);
     return Container(
-      margin: EdgeInsets.only(right: 8 * scale),
+      width: size,
+      height: size,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [topShade, bottomShade],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: [
+            Colors.white.withValues(alpha: alpha),
+            Colors.white.withValues(alpha: 0.0),
+          ],
         ),
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.zero,
-          bottomLeft: Radius.zero,
-          topRight: Radius.circular(56 * scale),
-          bottomRight: Radius.circular(56 * scale),
-        ),
-        border: Border.all(color: Colors.white.withOpacity(0.12)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.22),
-            blurRadius: 16,
-            spreadRadius: 0,
-            offset: const Offset(0, 6),
-          ),
-          BoxShadow(
-            color: const Color(0xFF0C1826).withOpacity(0.1),
-            blurRadius: 6,
-            spreadRadius: 0,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      padding: EdgeInsets.only(
-        left: 20 * scale,
-        right: 2 * scale,
-        top: 24 * scale,
-        bottom: 24 * scale,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 24),
-          _SectionTitle(color: Colors.white, text: 'TOOLS'),
-          SizedBox(height: 16 * scale),
-          _WrapChips(
-            scale: scale,
-            items: [
-              'Expo',
-              'EAS',
-              'Prettier',
-              'TestFlight',
-              'Figma',
-              'Adobe XD',
-              'VS Code',
-              'Postman',
-              'My SQL',
-              'Xcode',
-              'Android Studio',
-              'Reactotron',
-              'Flutter Dev Tools',
-              'GIT',
-              'CI/CD',
-              'Node JS',
-              'JIRA',
-              'Trello',
-              'Bash',
-              'Firebase',
-              'Bugsnag',
-              'Google Cloud Monitoring',
-              'New Relic',
-              'Sentry',
-            ],
-          ),
-          const SizedBox(height: 24),
-          _SectionTitle(color: Colors.white, text: 'TECH STACK'),
-          SizedBox(height: 12 * scale),
-          _WrapChips(
-            scale: scale,
-            items: const [
-              'Dart',
-              'Flutter',
-              'Bloc',
-              'Provider',
-              'React Native',
-              'React JS',
-              'Javascript',
-              'Typescript',
-              'Redux Saga',
-              'Redux Thunk',
-              'Redux Toolkit',
-              'Express JS',
-              'Next JS',
-              'Node JS',
-              'SQL Query',
-              'Swift',
-              'SwiftUI',
-              'UIKit',
-              'Kotlin',
-              'Objective-C',
-              'C#',
-            ],
-          ),
-          const SizedBox(height: 24),
-          _SectionTitle(color: Colors.white, text: 'SKILLS'),
-          SizedBox(height: 12 * scale),
-          _WrapChips(
-            scale: scale,
-            items: const [
-              'Model-View-ViewModel',
-              'Clean Architecture',
-              'Unit & Integration Testing',
-              'Scrum',
-              'Agile',
-              'RESTful APIs',
-            ],
-          ),
-          const SizedBox(height: 24),
-          _SectionTitle(color: Colors.white, text: 'LANGUAGES'),
-          SizedBox(height: 12 * scale),
-          _WrapChips(scale: scale, items: const ['English', 'Indonesian']),
-        ],
       ),
     );
   }
 }
 
 class _Header extends StatelessWidget {
+  final bool isWide;
   final double scale;
-  const _Header({required this.scale});
-  Color get _start => Colors.white.withOpacity(0.94);
-  Color get _end => Colors.white.withOpacity(0.88);
-  Color get _pillBg => const Color(0xFF2E3E52);
-  @override
-  Widget build(BuildContext context) {
-    final double w = MediaQuery.sizeOf(context).width;
-    final bool isWide = w >= 900;
-    final double baseSize = 150 * scale;
-    final double blockWidth = isWide ? 320 : baseSize;
-    final double blockHeight = isWide ? 220 * scale : baseSize;
-    final double circleSize = blockHeight * 0.82;
-    final double ringThickness = isWide ? 6 * scale : 5 * scale;
-    final double avatarRadius = circleSize / 2 - ringThickness;
-    final double rightRadius = 56 * scale;
-    final topPill = Color.alphaBlend(Colors.white.withOpacity(0.08), _pillBg);
-    final bottomPill = Color.alphaBlend(
-      Colors.black.withOpacity(0.08),
-      _pillBg,
+  const _Header({required this.isWide, required this.scale});
+
+  static const List<(IconData, String)> _contacts = [
+    (Icons.phone, '+6287728020907'),
+    (Icons.email, 'kiki.triansyah93@gmail.com'),
+    (Icons.link, 'linkedin.com/in/kiki-triansyah'),
+    (Icons.location_on, 'Jakarta, Indonesia'),
+  ];
+
+  /// The photo tab sits flush with the top and left edges of the card.
+  Widget _tab() {
+    final Color topTab = Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.08),
+      _kPillColor,
+    );
+    final Color bottomTab = Color.alphaBlend(
+      Colors.black.withValues(alpha: 0.08),
+      _kPillColor,
     );
     return Container(
+      width: isWide ? 216.0 : 120.0 * scale,
+      constraints: BoxConstraints(minHeight: isWide ? 200.0 : 0.0),
+      alignment: Alignment.center,
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [_start, _end],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          colors: [topTab, bottomTab],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.only(
+          topRight: Radius.circular((isWide ? 48.0 : 32.0) * scale),
+          bottomRight: Radius.circular((isWide ? 48.0 : 32.0) * scale),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.24),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
-      padding: EdgeInsets.only(left: 0, right: 16 * scale, bottom: 16 * scale),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Transform.translate(
-                offset: const Offset(-16, 0),
-                child: SizedBox(
-                  width: blockWidth,
-                  height: blockHeight,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned.fill(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [topPill, bottomPill],
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                            ),
-                            borderRadius: BorderRadius.only(
-                              topLeft: Radius.zero,
-                              bottomLeft: Radius.zero,
-                              topRight: Radius.circular(rightRadius),
-                              bottomRight: Radius.circular(rightRadius),
-                            ),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.12),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.24),
-                                blurRadius: 16,
-                                spreadRadius: 0,
-                                offset: const Offset(0, 6),
-                              ),
-                              BoxShadow(
-                                color: const Color(0xFF0C1826).withOpacity(0.1),
-                                blurRadius: 6,
-                                spreadRadius: 0,
-                                offset: const Offset(0, 1),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      Align(
-                        alignment: Alignment.center,
-                        child: Container(
-                          width: circleSize,
-                          height: circleSize,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white,
-                              width: ringThickness,
-                            ),
-                          ),
-                          child: ClipOval(
-                            child: Image.asset(
-                              'assets/img/photo_profile.jpg',
-                              width: avatarRadius * 2,
-                              height: avatarRadius * 2,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  Container(
-                                    color: Colors.grey.shade300,
-                                    alignment: Alignment.center,
-                                    child: Icon(
-                                      Icons.person,
-                                      size: avatarRadius,
-                                      color: Colors.grey.shade700,
-                                    ),
-                                  ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+      child: _Avatar(
+        size: isWide ? 168.0 : 96.0 * scale,
+        ring: (isWide ? 6.0 : 5.0) * scale,
+      ),
+    );
+  }
+
+  Widget _nameBlock(BuildContext context, double left) {
+    final TextTheme text = Theme.of(context).textTheme;
+    return Padding(
+      padding: EdgeInsets.only(left: left),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'KIKI TRIANSYAH',
+              style: text.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1,
               ),
-              SizedBox(width: 16 * scale),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'KIKI TRIANSYAH',
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1,
-                          ),
+            ),
+            Text(
+              'Software Developer Apps Mobile',
+              style: text.titleMedium?.copyWith(
+                color: Colors.black87,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              '(React Native Developer & IOS Developer & Flutter)',
+              style: text.bodyMedium?.copyWith(color: Colors.black54),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double inset = isWide ? _kWideInset : 16.0 * scale;
+    final double nameGap = isWide ? 32.0 : 16.0 * scale;
+    final BoxDecoration card = BoxDecoration(
+      gradient: LinearGradient(
+        colors: [
+          Colors.white.withValues(alpha: 0.94),
+          Colors.white.withValues(alpha: 0.88),
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      borderRadius: BorderRadius.circular(_kCardRadius),
+    );
+
+    if (isWide) {
+      // Photo, name and contacts share one row, so the banner has no empty
+      // space beside the name.
+      return Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: card,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _tab(),
+              Expanded(child: _nameBlock(context, nameGap)),
+              Padding(
+                padding: EdgeInsets.all(inset),
+                child: Center(
+                  child: SizedBox(
+                    width: _kContactListWidth,
+                    child: _ContactBar(
+                      bg: _kPillColor,
+                      scale: scale,
+                      asList: true,
+                      items: _contacts,
                     ),
-                    Text(
-                      'Software Developer Apps Mobile',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Colors.black87,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      '(React Native Developer & IOS Developer & Flutter)',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodyMedium?.copyWith(color: Colors.black54),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ],
           ),
-          SizedBox(height: 12 * scale),
-          _ContactBar(
-            bg: _pillBg,
-            scale: scale,
-            items: const [
-              (Icons.phone, '+6287728020907'),
-              (Icons.email, 'kiki.triansyah93@gmail.com'),
-              (Icons.link, 'linkedin.com/in/kiki-triansyah'),
-              (Icons.location_on, 'Jakarta, Indonesia'),
-            ],
+        ),
+      );
+    }
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: card,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _tab(),
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(right: inset),
+                    child: _nameBlock(context, nameGap),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(inset, 12 * scale, inset, inset),
+            child: LayoutBuilder(
+              builder: (context, constraints) => _ContactBar(
+                bg: _kPillColor,
+                scale: scale,
+                // Narrow cards list one contact per line, so no value is cut short.
+                asList: constraints.maxWidth < 560,
+                items: _contacts,
+              ),
+            ),
           ),
         ],
       ),
@@ -891,40 +533,37 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _ContactPill extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  final Color bg;
-  final double scale;
-  const _ContactPill({
-    required this.icon,
-    required this.text,
-    required this.bg,
-    required this.scale,
-  });
+class _Avatar extends StatelessWidget {
+  final double size;
+  final double ring;
+  const _Avatar({required this.size, required this.ring});
+
   @override
   Widget build(BuildContext context) {
+    final double photo = size - ring * 2;
     return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: 12 * scale,
-        vertical: 8 * scale,
-      ),
+      width: size,
+      height: size,
       decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: ring),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: Colors.white, size: 18 * scale),
-          SizedBox(width: 8 * scale),
-          Text(
-            text,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: Colors.white),
+      child: ClipOval(
+        child: Image.asset(
+          'assets/img/photo_profile.jpg',
+          width: photo,
+          height: photo,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => Container(
+            color: Colors.grey.shade300,
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.person,
+              size: photo / 2,
+              color: Colors.grey.shade700,
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -934,151 +573,275 @@ class _ContactBar extends StatelessWidget {
   final List<(IconData, String)> items;
   final Color bg;
   final double scale;
+  // A list shows one contact per line; otherwise two contacts share a line.
+  final bool asList;
   const _ContactBar({
     required this.items,
     required this.bg,
     required this.scale,
+    required this.asList,
   });
+
+  Widget _entry(BuildContext context, int index) {
+    final (IconData, String) item = items[index];
+    final Widget leading;
+    if (index == 0) {
+      leading = SvgIcon(
+        name: 'whatsapp',
+        size: 18 * scale,
+        color: Colors.white,
+      );
+    } else if (index == 2) {
+      leading = SvgIcon(
+        name: 'linkedin',
+        size: 18 * scale,
+        color: Colors.white,
+      );
+    } else {
+      leading = Icon(item.$1, color: Colors.white, size: 18 * scale);
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(width: 22 * scale, child: Center(child: leading)),
+        SizedBox(width: 8 * scale),
+        Flexible(
+          child: Text(
+            item.$2,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: Colors.white),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final bool isDesktop = constraints.maxWidth >= 768;
-        final topShade = Color.alphaBlend(Colors.white.withOpacity(0.06), bg);
-        final bottomShade = Color.alphaBlend(
-          Colors.black.withOpacity(0.06),
-          bg,
-        );
-
-        Widget buildItem((IconData, String) it, int index) {
-          Widget leading;
-          if (index == 0) {
-            leading = SvgIcon(
-              name: 'whatsapp',
-              size: 18 * scale,
-              color: Colors.white,
-            );
-          } else if (index == 2) {
-            leading = SvgIcon(
-              name: 'linkedin',
-              size: 18 * scale,
-              color: Colors.white,
-            );
-          } else {
-            leading = Icon(it.$1, color: Colors.white, size: 18 * scale);
-          }
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              leading,
-              SizedBox(width: 8 * scale),
-              Flexible(
-                child: Text(
-                  it.$2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: Colors.white),
+    final Color topShade = Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.06),
+      bg,
+    );
+    final Color bottomShade = Color.alphaBlend(
+      Colors.black.withValues(alpha: 0.06),
+      bg,
+    );
+    final List<Widget> rows = asList
+        ? [
+            for (var i = 0; i < items.length; i++)
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 4 * scale),
+                child: _entry(context, i),
+              ),
+          ]
+        : [
+            for (var i = 0; i < items.length; i += 2)
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 4 * scale),
+                child: Row(
+                  children: [
+                    Expanded(child: _entry(context, i)),
+                    SizedBox(width: 24 * scale),
+                    Expanded(
+                      child: i + 1 < items.length
+                          ? _entry(context, i + 1)
+                          : const SizedBox(),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          );
-        }
+          ];
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        horizontal: 18 * scale,
+        vertical: 12 * scale,
+      ),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [topShade, bottomShade],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        borderRadius: BorderRadius.circular((asList ? 18.0 : 28.0) * scale),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.26),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+          BoxShadow(
+            color: const Color(0xFF0C1826).withValues(alpha: 0.12),
+            blurRadius: 6,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: rows,
+      ),
+    );
+  }
+}
 
-        if (isDesktop) {
-          return Container(
-            width: double.infinity,
-            margin: EdgeInsets.symmetric(vertical: 2 * scale),
-            padding: EdgeInsets.symmetric(
-              horizontal: 28 * scale,
-              vertical: 14 * scale,
-            ),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [topShade, bottomShade],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white.withOpacity(0.16)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.26),
-                  blurRadius: 16,
-                  spreadRadius: 0,
-                  offset: const Offset(0, 6),
-                ),
-                BoxShadow(
-                  color: const Color(0xFF0C1826).withOpacity(0.12),
-                  blurRadius: 6,
-                  spreadRadius: 0,
-                  offset: const Offset(0, 1),
-                ),
+class _SkillsPanel extends StatelessWidget {
+  final bool isWide;
+  final double scale;
+  const _SkillsPanel({required this.isWide, required this.scale});
+
+  static const List<String> _tools = [
+    'Expo',
+    'EAS',
+    'Prettier',
+    'TestFlight',
+    'Figma',
+    'Adobe XD',
+    'VS Code',
+    'Postman',
+    'My SQL',
+    'Xcode',
+    'Android Studio',
+    'Reactotron',
+    'Flutter Dev Tools',
+    'GIT',
+    'CI/CD',
+    'Node JS',
+    'JIRA',
+    'Trello',
+    'Bash',
+    'Firebase',
+    'Bugsnag',
+    'Google Cloud Monitoring',
+    'New Relic',
+    'Sentry',
+  ];
+
+  static const List<String> _techStack = [
+    'Dart',
+    'Flutter',
+    'Bloc',
+    'Provider',
+    'React Native',
+    'React JS',
+    'Javascript',
+    'Typescript',
+    'Redux Saga',
+    'Redux Thunk',
+    'Redux Toolkit',
+    'Express JS',
+    'Next JS',
+    'Node JS',
+    'SQL Query',
+    'Swift',
+    'SwiftUI',
+    'UIKit',
+    'Kotlin',
+    'Objective-C',
+    'C#',
+  ];
+
+  static const List<String> _skills = [
+    'Model-View-ViewModel',
+    'Clean Architecture',
+    'Unit & Integration Testing',
+    'Scrum',
+    'Agile',
+    'RESTful APIs',
+  ];
+
+  static const List<String> _languages = ['English', 'Indonesian'];
+
+  Widget _group(String title, List<String> items) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(color: Colors.white, text: title),
+        SizedBox(height: 12 * scale),
+        _WrapChips(scale: scale, items: items),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color topShade = Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.08),
+      _kPanelColor,
+    );
+    final Color bottomShade = Color.alphaBlend(
+      Colors.black.withValues(alpha: 0.08),
+      _kPanelColor,
+    );
+    final double pad = isWide ? _kWideInset : 16.0 * scale;
+    final double rowGap = 20 * scale;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [topShade, bottomShade],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        borderRadius: BorderRadius.circular(_kCardRadius),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.22),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+          BoxShadow(
+            color: const Color(0xFF0C1826).withValues(alpha: 0.1),
+            blurRadius: 6,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      padding: EdgeInsets.all(pad),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Two groups side by side when there is room, one under another on phones.
+          if (constraints.maxWidth < 600) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _group('TOOLS', _tools),
+                SizedBox(height: rowGap),
+                _group('TECH STACK', _techStack),
+                SizedBox(height: rowGap),
+                _group('SKILLS', _skills),
+                SizedBox(height: rowGap),
+                _group('LANGUAGES', _languages),
               ],
-            ),
-            child: Wrap(
-              spacing: 24 * scale,
-              runSpacing: 8 * scale,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: List.generate(
-                items.length,
-                (i) => buildItem(items[i], i),
-              ),
-            ),
-          );
-        }
-
-        return Container(
-          width: double.infinity,
-          margin: EdgeInsets.symmetric(vertical: 2 * scale),
-          padding: EdgeInsets.symmetric(
-            horizontal: 24 * scale,
-            vertical: 13 * scale,
-          ),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [topShade, bottomShade],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Colors.white.withOpacity(0.16)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.26),
-                blurRadius: 16,
-                spreadRadius: 0,
-                offset: const Offset(0, 6),
-              ),
-              BoxShadow(
-                color: const Color(0xFF0C1826).withOpacity(0.12),
-                blurRadius: 6,
-                spreadRadius: 0,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          child: Column(
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: buildItem(items[0], 0)),
-                  SizedBox(width: 24 * scale),
-                  Expanded(child: buildItem(items[1], 1)),
+                  Expanded(child: _group('TOOLS', _tools)),
+                  const SizedBox(width: _kColumnGap),
+                  Expanded(child: _group('TECH STACK', _techStack)),
                 ],
               ),
-              SizedBox(height: 8 * scale),
+              SizedBox(height: rowGap),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: buildItem(items[2], 2)),
-                  SizedBox(width: 24 * scale),
-                  Expanded(child: buildItem(items[3], 3)),
+                  Expanded(child: _group('SKILLS', _skills)),
+                  const SizedBox(width: _kColumnGap),
+                  Expanded(child: _group('LANGUAGES', _languages)),
                 ],
               ),
             ],
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -1090,12 +853,14 @@ class _CvContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final double pad = isWide ? _kWideInset : 14.0 * scale;
     return Container(
+      width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.94),
-        borderRadius: BorderRadius.circular(isWide ? 12 : 10),
+        color: Colors.white.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(_kCardRadius),
       ),
-      padding: EdgeInsets.symmetric(horizontal: isWide ? 24 : 12, vertical: 16),
+      padding: EdgeInsets.all(pad),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1106,18 +871,15 @@ class _CvContent extends StatelessWidget {
             header: _ContentHeader(color: Colors.black, text: 'PROFILE'),
           ),
           _TimelineItem(
-            child: Padding(
-              padding: EdgeInsets.only(right: 16),
-              child: Text(
-                'A strategic Mobile Developer who transforms business objectives into high-impact mobile applications. I architect and deliver robust, scalable, and user-centric apps from concept to launch, leveraging deep expertise in Flutter, React Native, and native iOS/Android development. My end-to-end ownership—spanning from product discovery and system design to App Store and Play Store deployment—consistently accelerates development cycles and enhances user engagement. I thrive in collaborative environments, translating complex requirements into reliable, high-performance software that drives measurable business growth.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
             isLast: true,
             scale: scale,
             gap: 0,
             dotTop: 44 * scale,
             rightTopSpace: 4 * scale,
+            child: Text(
+              'A strategic Mobile Developer who transforms business objectives into high-impact mobile applications. I architect and deliver robust, scalable, and user-centric apps from concept to launch, leveraging deep expertise in Flutter, React Native, and native iOS/Android development. My end-to-end ownership—spanning from product discovery and system design to App Store and Play Store deployment—consistently accelerates development cycles and enhances user engagement. I thrive in collaborative environments, translating complex requirements into reliable, high-performance software that drives measurable business growth.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
           ),
           _RailGap(height: 24, scale: scale),
           _TimelineSection(
@@ -1368,38 +1130,6 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-class _IconText extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  final double scale;
-  const _IconText({
-    required this.icon,
-    required this.text,
-    required this.scale,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white70, size: 20 * scale),
-          SizedBox(width: 10 * scale),
-          Expanded(
-            child: Text(
-              text,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _WrapChips extends StatelessWidget {
   final List<String> items;
   final double scale;
@@ -1453,13 +1183,79 @@ class _ContentHeader extends StatelessWidget {
             ),
             child: Text(
               text,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w800,
                 letterSpacing: 0.8,
               ),
             ),
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// Title and date of an entry. Wide cards show the date on the title's line,
+/// right aligned. Narrower cards always show it under the title, so every
+/// entry looks the same and no text is squeezed beside the title.
+class _ItemHeading extends StatelessWidget {
+  final String title;
+  final String meta;
+  const _ItemHeading({required this.title, required this.meta});
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
+    final Text titleText = Text(
+      title,
+      style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+    );
+    final Text metaText = Text(
+      meta,
+      style: text.bodySmall?.copyWith(color: Colors.black54),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < _kSideBySideHeadingWidth) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [titleText, const SizedBox(height: 2), metaText],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: titleText),
+            const SizedBox(width: 12),
+            metaText,
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _Bullets extends StatelessWidget {
+  final List<String> items;
+  const _Bullets({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final item in items)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(width: 14, child: Text('•')),
+                Expanded(child: Text(item)),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -1482,25 +1278,8 @@ class _ExperienceItem extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                company,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-            ),
-            Text(
-              period,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: Colors.black54),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
+        _ItemHeading(title: company, meta: period),
+        const SizedBox(height: 4),
         Text(
           role,
           style: Theme.of(
@@ -1508,23 +1287,7 @@ class _ExperienceItem extends StatelessWidget {
           ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 6),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: points
-              .map(
-                (e) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('• '),
-                      Expanded(child: Text(e)),
-                    ],
-                  ),
-                ),
-              )
-              .toList(),
-        ),
+        _Bullets(items: points),
       ],
     );
   }
@@ -1547,25 +1310,8 @@ class _ProjectItem extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                name,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-            ),
-            Text(
-              period,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: Colors.black54),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
+        _ItemHeading(title: name, meta: period),
+        const SizedBox(height: 4),
         Text(
           summary,
           style: Theme.of(
@@ -1573,23 +1319,7 @@ class _ProjectItem extends StatelessWidget {
           ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 6),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: details
-              .map(
-                (e) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('• '),
-                      Expanded(child: Text(e)),
-                    ],
-                  ),
-                ),
-              )
-              .toList(),
-        ),
+        _Bullets(items: details),
       ],
     );
   }
@@ -1610,38 +1340,18 @@ class _EducationItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Text(
-                degree,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              period,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: Colors.black54),
-            ),
-          ],
-        ),
+        _ItemHeading(title: degree, meta: period),
         const SizedBox(height: 6),
         Text(
           school,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+          style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 4),
-        Text(gpa, style: Theme.of(context).textTheme.bodyMedium),
+        Text(gpa, style: text.bodyMedium),
       ],
     );
   }
@@ -1668,20 +1378,12 @@ class _SectionIcon extends StatelessWidget {
 class _RailGap extends StatelessWidget {
   final double height;
   final double scale;
-  final bool showDot;
-  const _RailGap({
-    required this.height,
-    required this.scale,
-    this.showDot = false,
-  });
+  const _RailGap({required this.height, required this.scale});
   @override
   Widget build(BuildContext context) {
-    final Color line = Colors.black;
-    final Color dot = Colors.black;
+    const Color line = Colors.black;
     final double railWidth = 28 * scale;
-    final double lineWidth = 2;
-    final double dotSize = 10 * scale;
-    final double dotTop = (height - dotSize) / 2;
+    const double lineWidth = 2;
     return SizedBox(
       height: height,
       child: Row(
@@ -1698,24 +1400,10 @@ class _RailGap extends StatelessWidget {
                   bottom: -3,
                   child: Container(width: lineWidth, color: line),
                 ),
-                if (showDot)
-                  Positioned(
-                    left: (railWidth - dotSize) / 2,
-                    top: dotTop < 0 ? 0 : dotTop,
-                    child: Container(
-                      width: dotSize,
-                      height: dotSize,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white,
-                        border: Border.all(color: dot, width: 2),
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
-          const SizedBox(width: 16),
+          SizedBox(width: _railGap(scale)),
           const Expanded(child: SizedBox()),
         ],
       ),
@@ -1736,9 +1424,9 @@ class _SectionHeaderRail extends StatelessWidget {
   });
   @override
   Widget build(BuildContext context) {
-    final Color line = Colors.black;
+    const Color line = Colors.black;
     final double railWidth = 28 * scale;
-    final double lineWidth = 2;
+    const double lineWidth = 2;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -1765,13 +1453,15 @@ class _SectionHeaderRail extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(width: 16),
+        SizedBox(width: _railGap(scale)),
         Expanded(child: header),
       ],
     );
   }
 }
 
+/// One timeline entry. The rail is drawn by a Stack that is as tall as the
+/// entry itself, so the line and the dot follow the text without measuring it.
 class _TimelineItem extends StatelessWidget {
   final Widget child;
   final bool isLast;
@@ -1787,59 +1477,49 @@ class _TimelineItem extends StatelessWidget {
     required this.dotTop,
     this.rightTopSpace = 0,
   });
+
   @override
   Widget build(BuildContext context) {
-    final Color line = Colors.black;
-    final Color dot = Colors.black;
+    const Color line = Colors.black;
+    const Color dot = Colors.black;
     final double railWidth = 28 * scale;
-    final double lineWidth = 2;
+    const double lineWidth = 2;
     final double dotSize = 10 * scale;
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: railWidth,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned(
-                  left: (railWidth - lineWidth) / 2,
-                  top: -3,
-                  bottom: -3,
-                  child: Container(width: lineWidth, color: line),
-                ),
-                Positioned(
-                  left: (railWidth - dotSize) / 2,
-                  top: dotTop,
-                  child: Container(
-                    width: dotSize,
-                    height: dotSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white,
-                      border: Border.all(color: dot, width: 2),
-                    ),
-                  ),
-                ),
-              ],
+    return Stack(
+      children: [
+        Positioned(
+          left: (railWidth - lineWidth) / 2,
+          top: -3,
+          bottom: -3,
+          child: Container(width: lineWidth, color: line),
+        ),
+        Positioned(
+          left: (railWidth - dotSize) / 2,
+          top: dotTop,
+          child: Container(
+            width: dotSize,
+            height: dotSize,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              border: Border.all(color: dot, width: 2),
             ),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(top: rightTopSpace),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  child,
-                  if (!isLast) SizedBox(height: gap),
-                ],
-              ),
-            ),
+        ),
+        Padding(
+          padding: EdgeInsets.only(
+            left: railWidth + _railGap(scale),
+            top: rightTopSpace,
           ),
-        ],
-      ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              child,
+              if (!isLast) SizedBox(height: gap),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

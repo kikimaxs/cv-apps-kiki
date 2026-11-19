@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'home_experience_lab.dart';
 import 'home_fx.dart';
 import 'home_motion.dart';
+import 'home_project_wall.dart';
 import 'home_showreel.dart';
 
 /// Glyphs used only by home_showreel.dart and home_experience_lab.dart.
@@ -30,9 +31,21 @@ const List<FaIconData> kHomeFaIcons = [
   FontAwesomeIcons.laptop,
   FontAwesomeIcons.circleCheck,
   FontAwesomeIcons.handPointer,
-  // Used by the portfolio page (contact list).
+  // Used by the portfolio page (contact list, PDF export, back-to-top).
   FontAwesomeIcons.discord,
+  FontAwesomeIcons.filePdf,
+  FontAwesomeIcons.arrowUp,
+  // Used by home_project_wall.dart.
+  FontAwesomeIcons.quoteLeft,
+  FontAwesomeIcons.arrowRight,
 ];
+
+/// Text font for the whole Home page: Carlito, the open-licence,
+/// metric-compatible twin of Calibri (same glyph widths, so it lays out
+/// exactly like Calibri). Calibri itself is a licensed Microsoft font and
+/// cannot be bundled; Carlito is already in assets/fonts (regular, bold,
+/// italic, bold italic), also used by the portfolio page and its PDF.
+const String kHomeFontFamily = 'Carlito';
 
 class HomeMain extends StatefulWidget {
   const HomeMain({super.key});
@@ -131,10 +144,30 @@ class _HomeMainState extends State<HomeMain> {
   @override
   Widget build(BuildContext context) {
     assert(kHomeFaIcons.isNotEmpty);
+    // Every Text on the page (hero, showreel, lab, footer, buttons, dialogs
+    // opened from here) inherits the Calibri-metric font through the theme
+    // and the Scaffold's default text style; explicit TextStyles that do not
+    // name a family pick it up too.
+    final theme = Theme.of(context);
+    return Theme(
+      data: theme.copyWith(
+        textTheme: theme.textTheme.apply(fontFamily: kHomeFontFamily),
+        primaryTextTheme: theme.primaryTextTheme.apply(
+          fontFamily: kHomeFontFamily,
+        ),
+      ),
+      child: _buildScaffold(),
+    );
+  }
+
+  Widget _buildScaffold() {
     return Scaffold(
       backgroundColor: _background,
       body: CursorGlow(
-        background: const AuroraBackground(),
+        background: const Stack(
+          fit: StackFit.expand,
+          children: [_HomeBackdrop(), AuroraBackground()],
+        ),
         child: Stack(
           children: [
             // Scrollable Content using PageView for snapping effect
@@ -161,8 +194,6 @@ class _HomeMainState extends State<HomeMain> {
                           ),
                         ),
                         const SizedBox(height: 64),
-                        const Reveal(child: TechMarquee()),
-                        const SizedBox(height: 88),
                         const HomeShowreel(),
                         const SizedBox(height: 88),
                         const Reveal(
@@ -204,7 +235,13 @@ class _HomeMainState extends State<HomeMain> {
                     child: ValueListenableBuilder<int>(
                       valueListenable: _currentPage,
                       child: RepaintBoundary(
-                        child: _buildContactFooter(context),
+                        child: Column(
+                          children: [
+                            const ProjectWall(),
+                            const SizedBox(height: 56),
+                            _buildContactFooter(context),
+                          ],
+                        ),
                       ),
                       builder: (context, currentPage, child) =>
                           _buildAnimatedSection(
@@ -1127,18 +1164,23 @@ class _HomeMainState extends State<HomeMain> {
               const SizedBox(height: 64),
               Divider(color: Colors.white.withValues(alpha: 0.14)),
               const SizedBox(height: 20),
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 30,
-                runSpacing: 16,
-                children: [
-                  const Text(
-                    '© 2026 Kiki Triansyah  ·  Dibuat dengan Flutter',
-                    style: TextStyle(color: Color(0xFF8EA3B8), fontSize: 12),
-                  ),
-                  const _AnimatedBackToTop(),
-                ],
+              // Back-to-top and copyright stacked on the footer's centre line
+              // at every width (phone, tablet, desktop).
+              const SizedBox(
+                width: double.infinity,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _AnimatedBackToTop(),
+                    SizedBox(height: 20),
+                    Text(
+                      '© 2026 Kiki Triansyah',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Color(0xFF8EA3B8), fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -1360,6 +1402,7 @@ class _AnimatedBackToTopState extends State<_AnimatedBackToTop> {
           scale: _isPressed ? 0.9 : (_isHovered ? 1.2 : 1.0),
           duration: const Duration(milliseconds: 200),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
@@ -1402,6 +1445,41 @@ class _AnimatedBackToTopState extends State<_AnimatedBackToTop> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Static backdrop behind the whole Home page: a collage of app screens Kiki
+/// has built (rasterised from the old assets/img/svg/cover_home.svg, which
+/// was 3.4 MB). It sits under the aurora and a dark wash so the copy stays
+/// readable, is decoded at screen width only, and never repaints.
+class _HomeBackdrop extends StatelessWidget {
+  const _HomeBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final decodeWidth = (media.size.width * media.devicePixelRatio)
+        .clamp(480, 1280)
+        .round();
+    return IgnorePointer(
+      child: RepaintBoundary(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.asset(
+              'assets/img/home_backdrop.jpg',
+              fit: BoxFit.cover,
+              cacheWidth: decodeWidth,
+              filterQuality: FilterQuality.low,
+              excludeFromSemantics: true,
+            ),
+            ColoredBox(
+              color: _HomeMainState._background.withValues(alpha: 0.86),
+            ),
+          ],
         ),
       ),
     );

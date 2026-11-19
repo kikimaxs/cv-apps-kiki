@@ -1,49 +1,47 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart'
+    show ValueListenable, kIsWeb, setEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../home/home_fx.dart' show Reveal;
-import '../portfolio_assets.dart';
+import '../../../utils/pdf_saver.dart';
+import '../portfolio_pdf.dart';
+import '../portfolio_slide_assets.dart';
+import '../portfolio_slides_data.dart';
 
 // ---------------------------------------------------------------------------
-// Portfolio page: the 12 slides of the Canva design ("MY PORTOFOLIO") as one
-// scrolling page. Text is native Flutter text, images are optimised copies of
-// the design's own artwork (assets/img/portfolio) loaded lazily as they come
-// into view, and nothing animates forever, so the page costs nothing at rest.
+// Portfolio page: the 12 pages of the portfolio PDF.
+//
+// Landscape and desktop: each page fills one screen. The design covers the
+// screen when all its content still fits that way, otherwise it is fitted below
+// the header, and scrolling snaps from page to page.
+//
+// Portrait (phones and tablets): the cover is its photo, full screen, with the
+// title and name over it. The other pages reflow into one column: text keeps
+// its paragraphs, and pictures fill the width in rows of two to four.
+//
+// The header is transparent and floats over the pages. Links are the PDF's own:
+// a link opens its address on tap, and turns blue while the pointer is over it.
+//
+// No GlobalKeys and no lookups of inherited widgets outside build: both break
+// when the layout changes under hot reload. Landscape positions are computed
+// from the page index; portrait pages are measured through their contexts.
 // ---------------------------------------------------------------------------
 
-const _ink = Color(0xFF0F172A);
-const _bar = Color(0xF2101928);
+const _barColor = Color(0xFF0B1220);
 const _accent = Color(0xFF67D4FF);
-const _assetDir = 'assets/img/portfolio/';
+const _linkBlue = Color(0xFF004AAD);
 
-const _molaGradient = LinearGradient(
-  begin: Alignment.centerLeft,
-  end: Alignment.centerRight,
-  colors: [Color(0xFF63DFE7), Color(0xFF2F8FCF), Color(0xFF0A4DAA)],
-);
-const _orangeGradient = LinearGradient(
-  begin: Alignment.bottomLeft,
-  end: Alignment.topRight,
-  colors: [Color(0xFFEE7C45), Color(0xFFF3A864), Color(0xFFF9CD88)],
-);
-const _lifelineGradient = LinearGradient(
-  begin: Alignment.bottomLeft,
-  end: Alignment.topRight,
-  colors: [Color(0xFF4A1140), Color(0xFF7E2A5F), Color(0xFFB04C7C)],
-);
-const _aboutGradient = LinearGradient(
-  begin: Alignment.centerLeft,
-  end: Alignment.centerRight,
-  colors: [Colors.white, Color(0xFFDADDE2)],
-);
+/// The header's height. It floats transparently over the pages, and each page
+/// keeps this much room at its top for its own content.
+const _headerH = 56.0;
 
-const _slideCount = 12;
-
-/// Quick links in the top bar: label and the slide each one jumps to.
+/// Top-bar links and the first page each one opens.
 const _chips = <(String, int)>[
   ('Cover', 0),
   ('MOLA TV', 1),
@@ -52,23 +50,6 @@ const _chips = <(String, int)>[
   ('Lifeline', 9),
   ('Kontak', 11),
 ];
-
-/// Sizes derived from the viewport. The wide-mode numbers are the Canva
-/// design's own point sizes (41.44/23.99 on its native 1366-wide canvas)
-/// rescaled to our ~1200 content width, so headings and body copy keep the
-/// same proportions as the source PDF.
-class _L {
-  const _L(this.w, this.h);
-
-  final double w;
-  final double h;
-
-  bool get wide => w >= 900;
-  double get pad => wide ? 56 : 20;
-  double get phoneH => wide ? 340 : 190;
-  double get heading => wide ? 36 : 28;
-  double get body => wide ? 21 : 16;
-}
 
 class MyPortofolioView extends StatefulWidget {
   const MyPortofolioView({super.key});
@@ -79,10 +60,24 @@ class MyPortofolioView extends StatefulWidget {
 
 class _MyPortofolioViewState extends State<MyPortofolioView> {
   final ScrollController _scroll = ScrollController();
-  final ValueNotifier<int> _tick = ValueNotifier<int>(0);
+  // The scroll offset, shared with the landscape pages so each one knows
+  // whether it is near the screen. Updated every ~60px of scrolling.
+  final ValueNotifier<double> _offset = ValueNotifier<double>(0);
   final ValueNotifier<int> _current = ValueNotifier<int>(0);
-  final List<GlobalKey> _keys = List.generate(_slideCount, (_) => GlobalKey());
-  double _lastTickPixels = -1000;
+  final ValueNotifier<bool> _exporting = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> _showTop = ValueNotifier<bool>(false);
+  // Portrait pages whose pictures load now: those within a screen of the view.
+  final ValueNotifier<Set<int>> _near = ValueNotifier<Set<int>>({0, 1});
+  bool _nearPending = false;
+  // Each portrait page's build context, to measure where it starts.
+  final List<BuildContext?> _pageCtx = List<BuildContext?>.filled(
+    kSlidePages.length,
+    null,
+  );
+  double _viewportH = 0;
+  double _lastOffset = -1000;
+  bool _snapping = false;
+  bool _portrait = false;
 
   @override
   void initState() {
@@ -90,545 +85,998 @@ class _MyPortofolioViewState extends State<MyPortofolioView> {
     _scroll.addListener(_onScroll);
   }
 
-  void _onScroll() {
-    final pixels = _scroll.position.pixels;
-    // Throttled: lazy images and the current-slide marker only need to know
-    // about every ~80px of scrolling, not about every frame.
-    if ((pixels - _lastTickPixels).abs() < 80) return;
-    _lastTickPixels = pixels;
-    _tick.value++;
-    _updateCurrent();
+  @override
+  void dispose() {
+    _scroll.dispose();
+    _offset.dispose();
+    _current.dispose();
+    _exporting.dispose();
+    _showTop.dispose();
+    _near.dispose();
+    super.dispose();
   }
 
-  void _updateCurrent() {
-    final probe = MediaQuery.sizeOf(context).height * 0.4;
-    for (var i = 0; i < _keys.length; i++) {
-      final box = _keys[i].currentContext?.findRenderObject();
-      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
-      final bottom = box.localToGlobal(Offset.zero).dy + box.size.height;
-      if (bottom > probe) {
-        if (_current.value != i) _current.value = i;
-        return;
+  void _onScroll() {
+    final pixels = _scroll.position.pixels;
+    _showTop.value = pixels > 600;
+    _updateCurrent();
+    _scheduleNear();
+    // Lazy pages are checked every ~60px of scrolling, not on every frame.
+    if ((pixels - _lastOffset).abs() < 60) return;
+    _lastOffset = pixels;
+    _offset.value = pixels;
+  }
+
+  /// Schedules the check of which portrait pages are near the screen. It runs
+  /// after the frame is laid out, never inside build or layout.
+  void _scheduleNear() {
+    if (_nearPending || !_portrait) return;
+    _nearPending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _nearPending = false;
+      if (mounted) _updateNear();
+    });
+  }
+
+  /// The portrait pages within a screen above or below the view. Their pictures
+  /// load; the others wait, so a phone fetches what it shows.
+  void _updateNear() {
+    if (!_portrait || !_scroll.hasClients || _viewportH <= 0) return;
+    final tops = _pageTops();
+    if (tops.length != kSlidePages.length) return;
+    final pos = _scroll.position;
+    final lo = pos.pixels - _viewportH;
+    final hi = pos.pixels + 2 * _viewportH;
+    final near = <int>{};
+    for (var i = 0; i < kSlidePages.length; i++) {
+      final box = _pageCtx[i]?.findRenderObject();
+      final h = box is RenderBox && box.hasSize ? box.size.height : 0.0;
+      if (tops[i] + h > lo && tops[i] < hi) near.add(i);
+    }
+    if (!setEquals(near, _near.value)) _near.value = near;
+  }
+
+  void _scrollToTop() {
+    _scroll.animateTo(
+      0,
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Future<void> _exportPdf() async {
+    if (_exporting.value) return;
+    _exporting.value = true;
+    // Looked up before the wait, so no inherited widget is read after it.
+    final messenger = context.findAncestorStateOfType<ScaffoldMessengerState>();
+    try {
+      final bytes = await buildPortfolioPdf();
+      if (kIsWeb) {
+        await savePdf(bytes, 'portofolio_kiki_triansyah.pdf');
+      } else {
+        await Printing.layoutPdf(onLayout: (_) async => bytes);
       }
+      if (mounted) {
+        messenger?.showSnackBar(
+          const SnackBar(content: Text('PDF portofolio siap diunduh.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        messenger?.showSnackBar(
+          const SnackBar(content: Text('Gagal membuat PDF portofolio.')),
+        );
+      }
+    } finally {
+      _exporting.value = false;
     }
   }
 
+  /// The page the header's links mark as current, in landscape: the page that
+  /// passes a probe line 40% down the screen, and the last page at the very end.
+  void _updateCurrent() {
+    if (_portrait || !_scroll.hasClients || _viewportH <= 0) return;
+    final pos = _scroll.position;
+    final last = kSlidePages.length - 1;
+    final index = pos.pixels >= pos.maxScrollExtent - 4
+        ? last
+        : ((pos.pixels + _viewportH * 0.4) / _viewportH).floor().clamp(0, last);
+    if (_current.value != index) _current.value = index;
+  }
+
   void _jumpTo(int index) {
-    final context = _keys[index].currentContext;
-    if (context == null) return;
-    Scrollable.ensureVisible(
-      context,
+    if (!_scroll.hasClients) return;
+    final tops = _pageTops();
+    if (index >= tops.length) return;
+    _scroll.animateTo(
+      tops[index]
+          .clamp(0.0, math.max(0.0, _scroll.position.maxScrollExtent))
+          .toDouble(),
       duration: const Duration(milliseconds: 650),
       curve: Curves.easeInOutCubic,
     );
   }
 
-  @override
-  void dispose() {
-    _scroll.dispose();
-    _tick.dispose();
-    _current.dispose();
-    super.dispose();
+  /// Scroll offsets where each page starts. In landscape every page is one
+  /// screen tall; in portrait the pages are measured.
+  List<double> _pageTops() {
+    if (!_portrait) {
+      return [for (var i = 0; i < kSlidePages.length; i++) i * _viewportH];
+    }
+    final first = _pageCtx.first?.findRenderObject();
+    if (first is! RenderBox || !first.attached || !first.hasSize) {
+      return const [];
+    }
+    final base = first.localToGlobal(Offset.zero).dy;
+    final tops = <double>[];
+    for (final ctx in _pageCtx) {
+      final box = ctx?.findRenderObject();
+      if (box is RenderBox && box.attached && box.hasSize) {
+        tops.add(box.localToGlobal(Offset.zero).dy - base);
+      }
+    }
+    return tops;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.sizeOf(context);
-    final l = _L(size.width, size.height);
-    return Scaffold(
-      backgroundColor: const Color(0xFF0B1220),
-      body: DefaultTextStyle.merge(
-        style: const TextStyle(fontFamily: 'Carlito'),
-        child: Stack(
-        children: [
-          _ScrollTick(
-            tick: _tick,
-            child: SingleChildScrollView(
-              controller: _scroll,
-              child: Column(
-                children: [
-                  for (var i = 0; i < _slideCount; i++)
-                    KeyedSubtree(key: _keys[i], child: _slide(i, l)),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: _TopBar(
-              wide: l.wide,
-              current: _current,
-              onJump: _jumpTo,
-              onBack: () => context.go('/'),
-            ),
-          ),
-          if (l.wide)
-            Positioned(
-              right: 14,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: _Dots(current: _current, onJump: _jumpTo),
-              ),
-            ),
-        ],
-        ),
-      ),
-    );
-  }
-
-  Widget _slide(int i, _L l) {
-    switch (i) {
-      case 0:
-        return _Cover(l: l);
-      case 1:
-        return _CollageSlide(
-          l: l,
-          gradient: _molaGradient,
-          logo: 'mola_logo.png',
-          logoWidth: l.wide ? 320 : 220,
-          shots: const [
-            'mola_s2.jpg',
-            'mola_s1.jpg',
-            'mola_s3.jpg',
-            'mola_s4.jpg',
-            'mola_s5.jpg',
-          ],
-          wideShot: 'mola_video.jpg',
-        );
-      case 2:
-        return _InfoSlide(
-          l: l,
-          gradient: _molaGradient,
-          textWeight: 0.47,
-          blocks: const [
-            _Block('What is the MOLA TV Apps ?', [
-              'MOLA is a Live streaming video entertainment application, MOLA '
-                  'itself is cross-platform based including Android and iOS using '
-                  '**React Native** with **Javascript** programming language, MOLA '
-                  'has main content that is more about Sports such as Football, UFC '
-                  'and popular movie content for adults and children, besides mobile '
-                  'MOLA already has its own device using MOLA TV box, and the MOLA '
-                  'has been uploaded to __Playstore__ and Appstore.',
-            ]),
-            _Block('My Achievement at MOLA TV ?', [
-              'In Indonesia, The app reached 700K downloads (iOS & Android since '
-                  '2020) and 2.3 million viewers during the Euro 2022 England vs '
-                  'Spain match.',
-            ]),
-          ],
-          media: _Media(
-            l: l,
-            maxWidth: 440,
-            children: const [_Shot('mola_app.jpg', cache: 900)],
-          ),
-        );
-      case 3:
-        return _InfoSlide(
-          l: l,
-          gradient: _molaGradient,
-          textWeight: 0.44,
-          blocks: const [
-            _Block('What is the most challenging job during work in MOLA ?', [
-              'I worked on a live quiz feature at MOLA, handling quiz delivery and '
-                  'answer submission using WebSocket with temporary storage before '
-                  'sending data to the API to prevent data loss. A major issue '
-                  'occurred when the server went down during a live session, causing '
-                  'users to be unable to participate. The solution was to implement '
-                  'a temporary maintenance mode while coordinating with Mobile, '
-                  'Backend, and Infra teams, and reschedule the affected quiz once '
-                  'the system was restored.',
-            ]),
-          ],
-          media: _Phones(
-            l: l,
-            names: const ['mola_quiz1.jpg', 'mola_quiz2.jpg'],
-            height: l.wide ? 420 : 240,
-          ),
-        );
-      case 4:
-        return _CollageSlide(
-          l: l,
-          gradient: _orangeGradient,
-          logo: 'durioo_logo.png',
-          logoWidth: l.wide ? 150 : 110,
-          logoRadius: 20,
-          shots: const [
-            'durioo_s1.jpg',
-            'durioo_s2.jpg',
-            'durioo_s3.jpg',
-            'durioo_s4.jpg',
-            'durioo_s5.jpg',
-          ],
-          wideShot: 'durioo_video.jpg',
-        );
-      case 5:
-        return _InfoSlide(
-          l: l,
-          gradient: _orangeGradient,
-          textWeight: 0.44,
-          blocks: const [
-            _Block('What is the Durioo+ Apps ?', [
-              'Durioo+ is a cross-platform video streaming app (Android & iOS) '
-                  'built with **React Native Expo** and **TypeScript**, featuring '
-                  'Muslim-friendly children’s content. It includes parental '
-                  'controls to manage kids’ viewing and is also available on '
-                  'Android TV and Samsung TV (published on __Play Store__ and '
-                  '__App Store__).',
-            ]),
-            _Block('My Achievement at Durioo+ ?', [
-              'Since March 2024, the app has reached 60K downloads (iOS & '
-                  'Android) in Malaysia, with over 3 million total video views '
-                  'based on backend tracking. It is now expanding internationally, '
-                  'with higher numbers across multiple countries.',
-            ]),
-          ],
-          media: _Media(
-            l: l,
-            maxWidth: 560,
-            children: const [_Shot('durioo_promo.jpg', cache: 1000)],
-          ),
-        );
-      case 6:
-        return _InfoSlide(
-          l: l,
-          gradient: _orangeGradient,
-          textWeight: 0.64,
-          blocks: const [
-            _Block('What is the most challenging job during work in Durioo+ ?', [
-              'I developed a video player using Expo AV for the Durioo App V1, '
-                  'featuring TV casting, offline download, subtitles, video quality '
-                  'selection, and next/previous playback. The main challenge was '
-                  'playback errors due to unsupported ASF video format (used for '
-                  'adaptive streaming). The solution was to fallback to the highest '
-                  'quality MP4 when ASF fails to load.',
-            ]),
-          ],
-          media: _Media(
-            l: l,
-            maxWidth: 400,
-            spacing: 12,
-            children: const [
-              _Shot('durioo_player.jpg', cache: 800),
-              _Shot('durioo_downloads.jpg', cache: 800),
-              _Shot('durioo_warning.jpg', cache: 800),
-            ],
-          ),
-        );
-      case 7:
-        return _CollageSlide(
-          l: l,
-          gradient: _orangeGradient,
-          title: 'FWD HadIR',
-          titleColor: const Color(0xFF16352B),
-          shots: const [
-            'hadir_2.jpg',
-            'hadir_3.jpg',
-            'hadir_4.jpg',
-            'hadir_5.jpg',
-            'hadir_6.jpg',
-            'hadir_7.jpg',
-            'hadir_8.png',
-            'hadir_9.png',
-            'hadir_10.png',
-          ],
-          shotHeight: l.wide ? 300 : 170,
-        );
-      case 8:
-        return _InfoSlide(
-          l: l,
-          gradient: _orangeGradient,
-          textWeight: 0.59,
-          blocks: const [
-            _Block('What is the HadIR Apps ?', [
-              'HadIR is an internal application designed to monitor employee '
-                  'productivity and daily activities. It allows employees to '
-                  'manage attendance (WFA/WFO), track activities like meetings or '
-                  'training, and ensures valid check-ins using map coordinates '
-                  '(with fake GPS detection). Managers and HRD can monitor '
-                  'performance, while features like meeting room booking, overtime '
-                  'tracking, and expense claims (meals and transport) are also '
-                  'supported. If employees forget to check in/out, they can submit '
-                  'a report for supervisor validation.',
-            ]),
-          ],
-          media: Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: l.wide ? 16 : 10,
-            runSpacing: l.wide ? 16 : 10,
-            children: [
-              for (final n in ['hadir_2.jpg', 'hadir_3.jpg', 'hadir_8.png'])
-                _Shot(n, height: l.wide ? 400 : 230),
-              // The app's own icon badge, sized like a badge next to the
-              // phone mockups instead of stretched to their height.
-              _Shot(
-                'hadir_icon.png',
-                width: l.wide ? 90 : 64,
-                radius: 20,
-                shadow: false,
-              ),
-            ],
-          ),
-        );
-      case 9:
-        return _CollageSlide(
-          l: l,
-          gradient: _lifelineGradient,
-          logo: 'lifeline_logo.png',
-          logoWidth: l.wide ? 420 : 260,
-          logoRadius: 0,
-          shots: const [
-            'lifeline_home.png',
-            'lifeline_chat.png',
-            'lifeline_voice.png',
-            'lifeline_keyboard.png',
-            'lifeline_score.png',
-            'lifeline_status.png',
-            'lifeline_devices.png',
-            'lifeline_select.png',
-            'lifeline_watch.png',
-            'lifeline_call.png',
-          ],
-          shotHeight: l.wide ? 300 : 170,
-        );
-      case 10:
-        return _InfoSlide(
-          l: l,
-          gradient: _lifelineGradient,
-          textWeight: 0.56,
-          ink: Colors.white,
-          blocks: const [
-            _Block('What is the LifelineConnect Apps ?', [
-              'LifeLine is a health and safety ecosystem application built using '
-                  'Flutter, with state management using Bloc, Provider, and Cubit. '
-                  'It connects devices such as smartwatches, digital dispensers, '
-                  'AirPods, and smart locks to a smartphone, collecting health '
-                  'data, tracking location, and sharing it with doctors or family '
-                  'members (Care Circle). The app also includes chat, calling, and '
-                  'reminder alarms.',
-              'This cross-platform project (iOS & Android) was developed for a '
-                  'client in China (a state-owned enterprise), featuring its own '
-                  'branded IoT devices (similar to Xiaomi and Huawei). It aims to '
-                  'provide a complete ecosystem for senior users within a single '
-                  'Care Circle group. The project is still ongoing and has not yet '
-                  'been released on the App Store or Play Store.',
-            ]),
-          ],
-          media: _LifelineMedia(l: l),
-        );
-      default:
-        return _About(l: l);
+  /// Scroll-snap: once scrolling stops, settle on the nearest page start. A
+  /// portrait page can be taller than the screen, so there we snap only when
+  /// the reader stopped near a page start, and never skip past a long page.
+  Future<void> _snapToPage() async {
+    if (_snapping || !_scroll.hasClients) return;
+    final pos = _scroll.position;
+    final tops = _pageTops();
+    if (tops.isEmpty) return;
+    final cur = pos.pixels;
+    var best = tops.first;
+    var bestDist = double.infinity;
+    for (final t in tops) {
+      final d = (t - cur).abs();
+      if (d < bestDist) {
+        bestDist = d;
+        best = t;
+      }
+    }
+    final limit = _portrait
+        ? pos.viewportDimension * 0.35
+        : pos.viewportDimension;
+    if (bestDist < 1 || bestDist > limit) return;
+    final target = best
+        .clamp(0.0, math.max(0.0, pos.maxScrollExtent))
+        .toDouble();
+    _snapping = true;
+    try {
+      await _scroll.animateTo(
+        target,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
+    } finally {
+      _snapping = false;
     }
   }
-}
-
-// ---------------------------------------------------------------------------
-// Chrome: top bar and side dots
-// ---------------------------------------------------------------------------
-
-class _TopBar extends StatelessWidget {
-  const _TopBar({
-    required this.wide,
-    required this.current,
-    required this.onJump,
-    required this.onBack,
-  });
-
-  final bool wide;
-  final ValueNotifier<int> current;
-  final ValueChanged<int> onJump;
-  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: _bar,
-      child: SafeArea(
-        bottom: false,
-        child: SizedBox(
-          height: 60,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    return Scaffold(
+      backgroundColor: _barColor,
+      body: DefaultTextStyle.merge(
+        style: const TextStyle(fontFamily: 'Carlito'),
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final portrait = c.maxHeight > c.maxWidth || c.maxWidth < 700;
+            _portrait = portrait;
+            _viewportH = c.maxHeight;
+            if (portrait) _scheduleNear();
+            final width = c.maxWidth;
+            final height = c.maxHeight;
+            return Stack(
               children: [
-                IconButton(
-                  tooltip: 'Kembali',
-                  onPressed: onBack,
-                  icon: const Icon(
-                    Icons.arrow_back_rounded,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Text(
-                  'Portofolio',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-                const Spacer(),
-                ValueListenableBuilder<int>(
-                  valueListenable: current,
-                  builder: (context, now, _) {
-                    if (!wide) {
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: Text(
-                          '${(now + 1).toString().padLeft(2, '0')} / $_slideCount',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1,
-                          ),
-                        ),
+                _ScrollTick(
+                  offset: _offset,
+                  child: NotificationListener<ScrollEndNotification>(
+                    onNotification: (_) {
+                      // After this frame: an animation started inside the end
+                      // notification would be replaced at once.
+                      WidgetsBinding.instance.addPostFrameCallback(
+                        (_) => _snapToPage(),
                       );
-                    }
-                    return Row(
-                      children: [
-                        for (var i = 0; i < _chips.length; i++)
-                          _Chip(
-                            label: _chips[i].$1,
-                            selected:
-                                now >= _chips[i].$2 &&
-                                (i == _chips.length - 1 ||
-                                    now < _chips[i + 1].$2),
-                            onTap: () => onJump(_chips[i].$2),
-                          ),
-                        const SizedBox(width: 30),
-                      ],
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  const _Chip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
-      child: TextButton(
-        onPressed: onTap,
-        style: TextButton.styleFrom(
-          foregroundColor: selected ? _ink : Colors.white70,
-          backgroundColor: selected ? _accent : Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-        ),
-        child: Text(label),
-      ),
-    );
-  }
-}
-
-class _Dots extends StatelessWidget {
-  const _Dots({required this.current, required this.onJump});
-
-  final ValueNotifier<int> current;
-  final ValueChanged<int> onJump;
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<int>(
-      valueListenable: current,
-      builder: (context, now, _) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 0; i < _slideCount; i++)
-            Semantics(
-              button: true,
-              label: 'Slide ${i + 1}',
-              child: GestureDetector(
-                onTap: () => onJump(i),
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 5,
-                    horizontal: 6,
-                  ),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: i == now ? 12 : 8,
-                    height: i == now ? 12 : 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: i == now ? _accent : Colors.white,
-                      border: Border.all(color: const Color(0x66000000)),
+                      return false;
+                    },
+                    child: SingleChildScrollView(
+                      controller: _scroll,
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < kSlidePages.length; i++)
+                            portrait
+                                ? Builder(
+                                    builder: (context) {
+                                      _pageCtx[i] = context;
+                                      return _PictureGate(
+                                        near: _near,
+                                        index: i,
+                                        child: _phonePage(
+                                          i,
+                                          kSlidePages[i],
+                                          width,
+                                          height,
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : _Lazy(
+                                    index: i,
+                                    height: height,
+                                    aspect: height > 0 ? width / height : 1.0,
+                                    builder: (_) => _SlidePageView(
+                                      page: kSlidePages[i],
+                                      width: width,
+                                      height: height,
+                                    ),
+                                  ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: _TopBar(
+                    wide: wide,
+                    current: _current,
+                    onJump: _jumpTo,
+                    onBack: () => context.go('/'),
+                    exporting: _exporting,
+                    onExportPdf: _exportPdf,
+                  ),
+                ),
+                Positioned(
+                  right: 16,
+                  bottom: 16,
+                  child: _BackToTop(show: _showTop, onTap: _scrollToTop),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Landscape and desktop: one page per screen.
+// ---------------------------------------------------------------------------
+
+/// A page scaled to the screen. Its background runs over the whole screen,
+/// under the transparent header. The design sits below the header, except the
+/// cover, whose photo covers the whole screen.
+class _SlidePageView extends StatelessWidget {
+  const _SlidePageView({
+    required this.page,
+    required this.width,
+    required this.height,
+  });
+
+  final SlidePage page;
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = _fullBleed(page) != null ? 0.0 : _headerH;
+    // A window shorter than the header leaves no area for the design: it is
+    // drawn at zero size, never at a negative one.
+    final areaH = math.max(0.0, height - top);
+    final s = _pageScale(page, math.max(0.0, width), areaH);
+    final dw = kSlideW * s;
+    final dh = kSlideH * s;
+    // Positioned, not Center: the design can be wider than the screen (cover
+    // scale), and a centred SizedBox would be squeezed to the screen's width.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: _gradient(page.bg),
+        color: page.bg.colors.first,
+      ),
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          Positioned(
+            left: (width - dw) / 2,
+            top: top + (areaH - dh) / 2,
+            width: dw,
+            height: dh,
+            child: ClipRect(
+              child: Stack(
+                clipBehavior: Clip.hardEdge,
+                children: [for (final item in page.items) _place(item, s)],
               ),
             ),
+          ),
         ],
       ),
     );
   }
 }
 
-// ---------------------------------------------------------------------------
-// Slide building blocks
-// ---------------------------------------------------------------------------
+/// The scale for one landscape page: cover when all its text and pictures
+/// still fit that way (no bands at the edges), otherwise fit.
+double _pageScale(SlidePage page, double width, double height) {
+  if (width <= 0 || height <= 0) return 0;
+  final cover = math.max(width / kSlideW, height / kSlideH);
+  final contain = math.min(width / kSlideW, height / kSlideH);
+  final photo = _fullBleed(page);
+  var l = double.infinity;
+  var t = double.infinity;
+  var r = double.negativeInfinity;
+  var b = double.negativeInfinity;
+  for (final item in page.items) {
+    if (identical(item, photo)) continue;
+    l = math.min(l, _leftOf(item));
+    t = math.min(t, _topOf(item));
+    r = math.max(r, _leftOf(item) + _widthOf(item));
+    b = math.max(b, _topOf(item) + _heightOf(item));
+  }
+  if (l > r) return contain;
+  bool fits(double s) {
+    final dx = (width - kSlideW * s) / 2;
+    final dy = (height - kSlideH * s) / 2;
+    return dx + l * s >= 0 &&
+        dx + r * s <= width &&
+        dy + t * s >= 0 &&
+        dy + b * s <= height;
+  }
 
-class _Slide extends StatelessWidget {
-  const _Slide({required this.l, required this.child, this.gradient});
+  return fits(cover) ? cover : contain;
+}
 
-  final _L l;
-  final Gradient? gradient;
-  final Widget child;
+/// Canva's gradient angle: 90 runs left to right, 0 top to bottom, and 45
+/// bottom-left to top-right. The first colour sits at the start of the line.
+LinearGradient _gradient(SlideBg bg) {
+  final rad = bg.angle * math.pi / 180;
+  final dx = math.sin(rad);
+  final dy = -math.cos(rad);
+  return LinearGradient(
+    begin: Alignment(-dx, -dy),
+    end: Alignment(dx, dy),
+    colors: bg.colors,
+  );
+}
+
+Widget _place(SlideItem item, double s) {
+  if (item is SlideImage) return _placeImage(item, s);
+  return _placeText(item as SlideText, s);
+}
+
+/// A picture at its design place, scaled by [s]. [dx] and [dy] move the whole
+/// design (the portrait cover uses them to centre its photo).
+Widget _placeImage(SlideImage item, double s, {double dx = 0, double dy = 0}) {
+  final w = item.width * s;
+  final h = item.height * s;
+  Widget content = SizedBox(
+    width: w,
+    height: h,
+    child: _pictureBox(item, s, s),
+  );
+  if (item.rot != 0) {
+    content = Transform.rotate(angle: item.rot * math.pi / 180, child: content);
+  }
+  return Positioned(
+    left: dx + item.left * s,
+    top: dy + item.top * s,
+    width: w,
+    height: h,
+    child: content,
+  );
+}
+
+Widget _placeText(SlideText item, double s) {
+  return Positioned(
+    left: item.left * s,
+    top: item.top * s,
+    width: item.width * s,
+    child: _designText(item, s),
+  );
+}
+
+/// Text at the design's own proportions, scaled by [s].
+Widget _designText(SlideText item, double s) {
+  final multi = item.text.contains('\n') || item.text.length > 60;
+  return Text.rich(
+    _rich(
+      item.text,
+      TextStyle(
+        fontSize: item.size * s,
+        height: item.lh,
+        color: item.color,
+        fontWeight: item.weight,
+        letterSpacing: item.spacing * s,
+      ),
+    ),
+    textAlign: item.align,
+    softWrap: multi,
+    overflow: TextOverflow.visible,
+  );
+}
+
+/// A picture inside its frame. [sx] and [sy] scale design units to pixels; the
+/// caller sizes the frame, and the picture is cropped to it as in the design.
+Widget _pictureBox(SlideImage item, double sx, double sy) {
+  final path = kSlideAssets[item.mediaId];
+  if (path == null) return const SizedBox.shrink();
+  final Widget picture = _LazyPicture(path: path);
+  Widget content = ClipRect(
+    child: Stack(
+      clipBehavior: Clip.hardEdge,
+      children: [
+        Positioned(
+          left: item.imgLeft * sx,
+          top: item.imgTop * sy,
+          width: (item.imgWidth ?? item.width) * sx,
+          height: (item.imgHeight ?? item.height) * sy,
+          child: picture,
+        ),
+      ],
+    ),
+  );
+  if (item.opacity < 1) {
+    content = Opacity(opacity: item.opacity, child: content);
+  }
+  return content;
+}
+
+/// Gives a portrait page the set of pages near the screen. A picture loads only
+/// while its page is in that set, so a phone fetches what it shows, not all of
+/// the portfolio's pictures at once.
+class _PictureGate extends InheritedNotifier<ValueListenable<Set<int>>> {
+  const _PictureGate({
+    required ValueListenable<Set<int>> near,
+    required this.index,
+    required super.child,
+  }) : super(notifier: near);
+
+  final int index;
+
+  @override
+  bool updateShouldNotify(covariant _PictureGate oldWidget) =>
+      oldWidget.index != index || super.updateShouldNotify(oldWidget);
+}
+
+/// A picture of the design. Outside its page's neighbourhood it is an empty box
+/// of the same size, so nothing is fetched or decoded until the page is near.
+/// Without a gate (landscape) it always loads.
+class _LazyPicture extends StatelessWidget {
+  const _LazyPicture({required this.path});
+
+  final String path;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      constraints: BoxConstraints(minHeight: l.h),
-      decoration: BoxDecoration(gradient: gradient),
-      padding: EdgeInsets.fromLTRB(l.pad, 96, l.pad, 56),
-      alignment: Alignment.center,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1200),
-        child: Reveal(child: child),
+    final gate = context.dependOnInheritedWidgetOfExactType<_PictureGate>();
+    final load =
+        gate == null || (gate.notifier?.value.contains(gate.index) ?? true);
+    if (!load) return const SizedBox.expand();
+    return path.endsWith('.svg')
+        ? SvgPicture.asset(path, fit: BoxFit.fill)
+        : Image.asset(
+            path,
+            fit: BoxFit.fill,
+            gaplessPlayback: true,
+            errorBuilder: (context, error, stack) => const SizedBox.shrink(),
+          );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared geometry of the design's items.
+// ---------------------------------------------------------------------------
+
+/// The page's full-bleed photo (the cover's), when it has one.
+SlideImage? _fullBleed(SlidePage page) {
+  for (final item in page.items) {
+    if (item is SlideImage && item.width >= 1300 && item.height >= 600) {
+      return item;
+    }
+  }
+  return null;
+}
+
+double _topOf(SlideItem item) =>
+    item is SlideText ? item.top : (item as SlideImage).top;
+
+double _leftOf(SlideItem item) =>
+    item is SlideText ? item.left : (item as SlideImage).left;
+
+double _widthOf(SlideItem item) =>
+    item is SlideText ? item.width : (item as SlideImage).width;
+
+/// A text's height on the design: its PDF lines times the line height.
+double _textHeight(SlideText item) =>
+    item.text.split('\n').length * item.size * item.lh;
+
+double _heightOf(SlideItem item) =>
+    item is SlideText ? _textHeight(item) : (item as SlideImage).height;
+
+/// Whether an item sits in the design's left half (its centre decides).
+bool _isLeft(SlideItem item) =>
+    _leftOf(item) + _widthOf(item) / 2 < kSlideW / 2;
+
+// ---------------------------------------------------------------------------
+// Portrait: the cover, and the other pages reflowed into one column.
+// ---------------------------------------------------------------------------
+
+/// One portrait page: the cover (page 0) with its photo, or a reflowed column.
+Widget _phonePage(int index, SlidePage page, double width, double height) {
+  final photo = index == 0 ? _fullBleed(page) : null;
+  if (photo == null) {
+    return _FlowPage(page: page, width: width, minHeight: height);
+  }
+  return _PortraitCover(page: page, photo: photo, width: width, height: height);
+}
+
+/// The cover on a phone: the photo covers the whole screen, and the title and
+/// the name sit over it. Every item of the cover shares one transform, so the
+/// photo's composition holds.
+class _PortraitCover extends StatelessWidget {
+  const _PortraitCover({
+    required this.page,
+    required this.photo,
+    required this.width,
+    required this.height,
+  });
+
+  final SlidePage page;
+  final SlideImage photo;
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    // The photo's frame is scaled to cover the screen and centred on it.
+    final s = math.max(height / photo.height, width / photo.width);
+    final ox = (width - photo.width * s) / 2 - photo.left * s;
+    final oy = (height - photo.height * s) / 2 - photo.top * s;
+    final texts = page.items.whereType<SlideText>().toList()
+      ..sort((a, b) => a.top.compareTo(b.top));
+    // The title stays where the design puts it, above the laptop on the wall,
+    // and the name follows under it.
+    // A window shorter than about 48px leaves no room for the title band; the
+    // band's top limit then stays at 24px rather than asking clamp for an empty
+    // range, which throws.
+    final maxY = math.max(24.0, height * 0.5);
+    final y0 = (oy + (texts.isEmpty ? 0.0 : texts.first.top) * s)
+        .clamp(24.0, maxY)
+        .toDouble();
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: _gradient(page.bg),
+        color: page.bg.colors.first,
+      ),
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            // Pictures are painted in the design's own order: a picture the
+            // design keeps behind the photo stays hidden, as on the desktop.
+            for (final item in page.items)
+              if (item is SlideImage) _placeImage(item, s, dx: ox, dy: oy),
+            Positioned(
+              top: y0,
+              left: 0,
+              right: 0,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final text in texts)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Text.rich(
+                            _rich(
+                              _reflow(text.text),
+                              TextStyle(
+                                fontSize: _mobileSize(text.size),
+                                height: 1.2,
+                                color: text.color,
+                                fontWeight: text.weight,
+                              ),
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _Block {
-  const _Block(this.heading, this.paragraphs);
+/// A portrait page at least one screen tall. The header floats over its top,
+/// so the content starts below the header.
+class _FlowPage extends StatelessWidget {
+  const _FlowPage({
+    required this.page,
+    required this.width,
+    required this.minHeight,
+  });
 
-  final String heading;
-  final List<String> paragraphs;
+  final SlidePage page;
+  final double width;
+  final double minHeight;
+
+  static const _pad = 20.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final cw = math.max(0.0, width - _pad * 2);
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minHeight),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: _gradient(page.bg),
+          color: page.bg.colors.first,
+        ),
+        child: Column(
+          // Top-aligned: a short page starts at the top like a long one, so no
+          // blank band opens above its content.
+          mainAxisAlignment: MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(_pad, _headerH + 24, _pad, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _phoneBlocks(page.items, cw),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-/// `**text**` becomes bold italic (the design's tech-stack call-outs),
-/// `++text++` becomes bold only (its plain emphasis, e.g. "Immediately"),
-/// and `__text__` becomes underlined.
+/// One piece of a portrait page: a text (with its icon, when it has one), or a
+/// row of pictures.
+class _Block {
+  _Block({
+    required this.top,
+    required this.left,
+    this.text,
+    this.icon,
+    this.loose = false,
+    List<SlideImage>? pictures,
+  }) : pictures = pictures ?? <SlideImage>[];
+
+  final double top;
+
+  /// Whether the block sits in the design's left column.
+  final bool left;
+  final SlideText? text;
+  final SlideImage? icon;
+  final List<SlideImage> pictures;
+
+  /// A narrow single picture: it may share a row with its neighbours.
+  final bool loose;
+}
+
+/// The page's blocks in reading order, as widgets. With texts, the left column
+/// reads first and then the right; a page of pictures alone reads as one grid.
+List<Widget> _phoneBlocks(List<SlideItem> items, double cw) {
+  final texts = items.whereType<SlideText>().toList();
+  final images = items.whereType<SlideImage>().toList();
+
+  // A small picture on the text's left, within the text's rows, is its icon.
+  final icons = <SlideText, SlideImage>{};
+  final used = <SlideImage>{};
+  for (final text in texts) {
+    final bottom = text.top + _textHeight(text);
+    SlideImage? best;
+    for (final image in images) {
+      if (used.contains(image) ||
+          image.width >= 100 ||
+          image.left >= text.left) {
+        continue;
+      }
+      if (image.top >= bottom || image.top + image.height <= text.top) {
+        continue;
+      }
+      if (best == null ||
+          (image.top - text.top).abs() < (best.top - text.top).abs()) {
+        best = image;
+      }
+    }
+    if (best != null) {
+      icons[text] = best;
+      used.add(best);
+    }
+  }
+
+  final blocks = <_Block>[
+    for (final text in texts)
+      _Block(top: text.top, left: _isLeft(text), text: text, icon: icons[text]),
+  ];
+
+  // Pictures whose tops are within 60 of each other form one group, read from
+  // left to right.
+  final rest = [
+    for (final image in images)
+      if (!used.contains(image)) image,
+  ]..sort((a, b) => a.top.compareTo(b.top));
+  final groups = <List<SlideImage>>[];
+  for (final image in rest) {
+    if (groups.isNotEmpty && (image.top - groups.last.first.top).abs() < 60) {
+      groups.last.add(image);
+    } else {
+      groups.add([image]);
+    }
+  }
+  for (final group in groups) {
+    group.sort((a, b) => a.left.compareTo(b.left));
+    final centre =
+        group.fold<double>(
+          0,
+          (sum, image) => sum + image.left + image.width / 2,
+        ) /
+        group.length;
+    blocks.add(
+      _Block(
+        top: group.first.top,
+        left: centre < kSlideW / 2,
+        loose: group.length == 1 && group.first.width < 400,
+        pictures: group,
+      ),
+    );
+  }
+
+  List<_Block> byTop(Iterable<_Block> list) =>
+      [...list]..sort((a, b) => a.top.compareTo(b.top));
+  final ordered = texts.isEmpty
+      ? byTop(blocks)
+      : [
+          ...byTop(blocks.where((b) => b.left)),
+          ...byTop(blocks.where((b) => !b.left)),
+        ];
+
+  // Narrow single pictures that follow each other, close in height, share one
+  // row of up to four.
+  final merged = <_Block>[];
+  for (final block in ordered) {
+    final last = merged.isEmpty ? null : merged.last;
+    if (last != null &&
+        last.loose &&
+        block.loose &&
+        (block.top - last.top).abs() <= 200 &&
+        last.pictures.length + block.pictures.length <= 4) {
+      last.pictures.addAll(block.pictures);
+      continue;
+    }
+    merged.add(block);
+  }
+
+  final out = <Widget>[];
+  for (final block in merged) {
+    final text = block.text;
+    if (text != null) {
+      out.add(_textBlock(text, block.icon));
+    } else {
+      for (final row in _balanced(block.pictures)) {
+        out.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: _imageRow(row, cw),
+          ),
+        );
+      }
+    }
+  }
+  return out;
+}
+
+/// A text, with its icon at the left when it has one.
+Widget _textBlock(SlideText text, SlideImage? icon) {
+  final body = _flowText(text);
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: icon == null
+        ? body
+        : Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 44,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _rowCell(icon, 36),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: body),
+            ],
+          ),
+  );
+}
+
+/// A group of pictures split into rows of two to four, as evenly as possible:
+/// five become 3 and 2, six become 3 and 3, seven become 4 and 3.
+List<List<SlideImage>> _balanced(List<SlideImage> images) {
+  final n = images.length;
+  if (n <= 4) return [images];
+  final rows = (n / 4).ceil();
+  final base = n ~/ rows;
+  var extra = n % rows;
+  final out = <List<SlideImage>>[];
+  var k = 0;
+  for (var r = 0; r < rows; r++) {
+    final size = base + (extra > 0 ? 1 : 0);
+    if (extra > 0) extra--;
+    out.add(images.sublist(k, k + size));
+    k += size;
+  }
+  return out;
+}
+
+/// One or more pictures side by side. Their heights match, the widths follow
+/// the pictures' shapes, and the row fills the width with an even gap. A single
+/// picture is sized for the phone, and a wide one takes the full width. An icon
+/// stays at the left.
+Widget _imageRow(List<SlideImage> row, double cw) {
+  if (row.length == 1) {
+    final image = row.first;
+    final icon = image.width < 100;
+    final double w;
+    if (icon) {
+      w = 32;
+    } else if (image.width >= 400) {
+      w = cw;
+    } else {
+      w = math.min(cw, math.max(cw * 0.45, image.width / kSlideW * cw * 2.2));
+    }
+    return Align(
+      alignment: icon ? Alignment.centerLeft : Alignment.center,
+      child: _rowCell(image, w),
+    );
+  }
+  const gap = 8.0;
+  final ratios = [for (final image in row) _aspect(image)];
+  final total = ratios.fold<double>(0, (sum, r) => sum + r);
+  final height = math.max(0.0, cw - gap * (row.length - 1)) / total;
+  return Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      for (var k = 0; k < row.length; k++) ...[
+        if (k > 0) const SizedBox(width: gap),
+        _rowCell(row[k], ratios[k] * height),
+      ],
+    ],
+  );
+}
+
+/// The part of a picture that shows: its drawn box, cut to its frame. The design
+/// can leave empty frame below or beside a picture; the phone shows none of it,
+/// so it takes no room.
+Rect _visibleBox(SlideImage image) {
+  final left = math.max(0.0, image.imgLeft);
+  final top = math.max(0.0, image.imgTop);
+  final right = math.min(
+    image.width,
+    image.imgLeft + (image.imgWidth ?? image.width),
+  );
+  final bottom = math.min(
+    image.height,
+    image.imgTop + (image.imgHeight ?? image.height),
+  );
+  if (right <= left || bottom <= top) {
+    return Rect.fromLTWH(0, 0, image.width, image.height);
+  }
+  return Rect.fromLTRB(left, top, right, bottom);
+}
+
+/// Width over height of the part that shows.
+double _aspect(SlideImage image) {
+  final box = _visibleBox(image);
+  return box.width / box.height;
+}
+
+/// A picture [w] wide, showing only its visible part.
+Widget _rowCell(SlideImage image, double w) {
+  final box = _visibleBox(image);
+  final k = w / box.width;
+  return SizedBox(
+    width: w,
+    height: box.height * k,
+    child: ClipRect(
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          Positioned(
+            left: -box.left * k,
+            top: -box.top * k,
+            width: image.width * k,
+            height: image.height * k,
+            child: _pictureBox(image, k, k),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// Phone sizes: the design's headings and body text, scaled to read well on a
+/// narrow screen.
+double _mobileSize(double size) {
+  if (size >= 70) return 34; // the cover title
+  if (size >= 50) return 30; // "About Me", "Contact :"
+  if (size >= 35) return 24; // headings and the name
+  if (size >= 26) return 16; // contact lines
+  if (size >= 22) return 15.5; // body
+  return 14.5; // smaller body text
+}
+
+Widget _flowText(SlideText item) {
+  return Text.rich(
+    _rich(
+      _reflow(item.text),
+      TextStyle(
+        fontSize: _mobileSize(item.size),
+        height: item.size >= 35 ? 1.2 : 1.5,
+        color: item.color,
+        fontWeight: item.weight,
+      ),
+    ),
+    textAlign: item.align,
+  );
+}
+
+/// The PDF breaks its lines for the design's width. On a phone the lines are
+/// joined into paragraphs, and a new paragraph starts after a sentence that is
+/// followed by a line starting with a capital letter.
+String _reflow(String text) {
+  final lines = [
+    for (final line in text.split('\n'))
+      if (line.trim().isNotEmpty) line.trim(),
+  ];
+  final sentenceEnd = RegExp(r'[.!?:]$');
+  final startsNew = RegExp(r'^[A-Z0-9(“"]');
+  final buf = StringBuffer();
+  for (var i = 0; i < lines.length; i++) {
+    if (i > 0) {
+      final ends = sentenceEnd.hasMatch(_plain(lines[i - 1]));
+      final starts = startsNew.hasMatch(_plain(lines[i]));
+      buf.write(ends && starts ? '\n\n' : ' ');
+    }
+    buf.write(lines[i]);
+  }
+  return buf.toString();
+}
+
+/// The text as it reads, without the markers.
+String _plain(String s) => s
+    .replaceAllMapped(RegExp(r'\[\[(.+?)\|.+?\]\]'), (m) => m.group(1)!)
+    .replaceAll(RegExp(r'\*\*|\+\+'), '');
+
+// ---------------------------------------------------------------------------
+// Text and links.
+// ---------------------------------------------------------------------------
+
+/// `[[label|address]]` is a link: it opens the address on tap, and turns blue
+/// while the pointer is over it. `**x**` becomes bold italic (the tech-stack
+/// call-outs), and `++x++` bold only.
 TextSpan _rich(String text, TextStyle style) {
-  final pattern = RegExp(r'\*\*(.+?)\*\*|\+\+(.+?)\+\+|__(.+?)__');
+  final pattern = RegExp(r'\[\[(.+?)\|(.+?)\]\]|\*\*(.+?)\*\*|\+\+(.+?)\+\+');
   final spans = <InlineSpan>[];
   var cursor = 0;
   for (final m in pattern.allMatches(text)) {
@@ -637,807 +1085,295 @@ TextSpan _rich(String text, TextStyle style) {
     }
     if (m.group(1) != null) {
       spans.add(
-        TextSpan(
-          text: m.group(1),
-          style: const TextStyle(
-            fontWeight: FontWeight.w800,
-            fontStyle: FontStyle.italic,
-          ),
+        WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: _LinkText(label: m.group(1)!, url: m.group(2)!, style: style),
         ),
       );
-    } else if (m.group(2) != null) {
+    } else if (m.group(3) != null) {
       spans.add(
         TextSpan(
-          text: m.group(2),
-          style: const TextStyle(fontWeight: FontWeight.w800),
+          text: m.group(3),
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            fontStyle: FontStyle.italic,
+          ),
         ),
       );
     } else {
       spans.add(
         TextSpan(
-          text: m.group(3),
-          style: const TextStyle(decoration: TextDecoration.underline),
+          text: m.group(4),
+          style: const TextStyle(fontWeight: FontWeight.w700),
         ),
       );
     }
     cursor = m.end;
   }
-  if (cursor < text.length) spans.add(TextSpan(text: text.substring(cursor)));
+  if (cursor < text.length) {
+    spans.add(TextSpan(text: text.substring(cursor)));
+  }
   return TextSpan(style: style, children: spans);
 }
 
-class _Blocks extends StatelessWidget {
-  const _Blocks({required this.l, required this.blocks, required this.ink});
-
-  final _L l;
-  final List<_Block> blocks;
-  final Color ink;
-
-  @override
-  Widget build(BuildContext context) {
-    final heading = TextStyle(
-      color: ink,
-      fontSize: l.heading,
-      fontWeight: FontWeight.w700,
-      height: 1.05,
-    );
-    final body = TextStyle(color: ink, fontSize: l.body, height: 1.5);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var b = 0; b < blocks.length; b++) ...[
-          if (b > 0) const SizedBox(height: 30),
-          Text(blocks[b].heading, style: heading),
-          const SizedBox(height: 12),
-          for (final p in blocks[b].paragraphs) ...[
-            Text.rich(_rich(p, body)),
-            const SizedBox(height: 12),
-          ],
-        ],
-      ],
-    );
-  }
-}
-
-/// Text on one side, artwork on the other (stacked on narrow screens).
-class _InfoSlide extends StatelessWidget {
-  const _InfoSlide({
-    required this.l,
-    required this.gradient,
-    required this.blocks,
-    required this.media,
-    this.ink = _ink,
-    this.textWeight = 0.524,
-  });
-
-  final _L l;
-  final Gradient gradient;
-  final List<_Block> blocks;
-  final Widget media;
-  final Color ink;
-
-  /// Share of the row's width given to the text column on wide screens,
-  /// taken from this slide's actual text/media column widths in the Canva
-  /// design (it is not an even split on every slide).
-  final double textWeight;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = _Blocks(l: l, blocks: blocks, ink: ink);
-    final textFlex = (textWeight.clamp(0.2, 0.8) * 1000).round();
-    return _Slide(
-      l: l,
-      gradient: gradient,
-      child: l.wide
-          ? Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(flex: textFlex, child: text),
-                const SizedBox(width: 56),
-                Expanded(flex: 1000 - textFlex, child: Center(child: media)),
-              ],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                text,
-                const SizedBox(height: 28),
-                Center(child: media),
-              ],
-            ),
-    );
-  }
-}
-
-/// Artwork stacked vertically, capped to [maxWidth].
-class _Media extends StatelessWidget {
-  const _Media({
-    required this.l,
-    required this.children,
-    required this.maxWidth,
-    this.spacing = 14,
-  });
-
-  final _L l;
-  final List<Widget> children;
-  final double maxWidth;
-  final double spacing;
-
-  @override
-  Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: maxWidth),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 0; i < children.length; i++) ...[
-            if (i > 0) SizedBox(height: spacing),
-            children[i],
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// A row of phone screenshots of equal height that wraps when narrow.
-class _Phones extends StatelessWidget {
-  const _Phones({required this.l, required this.names, required this.height});
-
-  final _L l;
-  final List<String> names;
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      alignment: WrapAlignment.center,
-      spacing: l.wide ? 16 : 10,
-      runSpacing: l.wide ? 16 : 10,
-      children: [for (final n in names) _Shot(n, height: height)],
-    );
-  }
-}
-
-/// A collage slide: optional logo or title, then a wrapping gallery of
-/// screenshots and optionally one landscape image.
-class _CollageSlide extends StatelessWidget {
-  const _CollageSlide({
-    required this.l,
-    required this.gradient,
-    required this.shots,
-    this.logo,
-    this.logoWidth = 260,
-    this.logoRadius = 0,
-    this.title,
-    this.titleColor = Colors.white,
-    this.wideShot,
-    this.shotHeight,
-  });
-
-  final _L l;
-  final Gradient gradient;
-  final List<String> shots;
-  final String? logo;
-  final double logoWidth;
-  final double logoRadius;
-  final String? title;
-  final Color titleColor;
-  final String? wideShot;
-  final double? shotHeight;
-
-  @override
-  Widget build(BuildContext context) {
-    final h = shotHeight ?? l.phoneH;
-    return _Slide(
-      l: l,
-      gradient: gradient,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (logo != null)
-            _Shot(
-              logo!,
-              width: logoWidth,
-              radius: logoRadius,
-              shadow: false,
-              cache: 900,
-            ),
-          if (title != null)
-            Text(
-              title!,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: titleColor,
-                fontSize: l.wide ? 72 : 44,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -2,
-                height: 1,
-              ),
-            ),
-          if (logo != null || title != null) SizedBox(height: l.wide ? 36 : 24),
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: l.wide ? 16 : 10,
-            runSpacing: l.wide ? 16 : 10,
-            children: [
-              for (final n in shots) _Shot(n, height: h),
-              if (wideShot != null)
-                _Shot(wideShot!, height: h * 0.62, cache: 700),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Slide 11: app icon, login screen and the four independence-score screens.
-class _LifelineMedia extends StatelessWidget {
-  const _LifelineMedia({required this.l});
-
-  final _L l;
-
-  @override
-  Widget build(BuildContext context) {
-    final h = l.wide ? 300.0 : 190.0;
-    return Wrap(
-      alignment: WrapAlignment.center,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: l.wide ? 16 : 10,
-      runSpacing: l.wide ? 16 : 10,
-      children: [
-        _Shot(
-          'lifeline_icon.png',
-          width: l.wide ? 110 : 84,
-          radius: 24,
-          shadow: false,
-        ),
-        _Shot('lifeline_login.png', height: h),
-        _Shot('lifeline_strong.png', height: h),
-        _Shot('lifeline_fair.png', height: h),
-        _Shot('lifeline_weak.png', height: h),
-        _Shot('lifeline_good.png', height: h),
-      ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Slide 1: cover, and slide 12: about + contact
-// ---------------------------------------------------------------------------
-
-class _Cover extends StatelessWidget {
-  const _Cover({required this.l});
-
-  final _L l;
-
-  // Where the picture frame sits in the photo (fraction of the image),
-  // read off the Canva page's own element coordinates (1366x768 canvas).
-  static const _frameX = 0.833;
-  static const _frameY = 0.6405;
-  static const _titleY = 0.33;
-
-  // Laptop screen inside the photo (fractions of the image).
-  static const _screenLeft = 0.3865;
-  static const _screenTop = 0.5084;
-  static const _screenWidth = 0.2333;
-  static const _screenHeight = 0.2397;
-
-  @override
-  Widget build(BuildContext context) {
-    final aspect = kPortfolioAspects['cover.jpg']!;
-    final height = math.max(l.h, l.wide ? l.w / aspect : 560.0);
-    return SizedBox(
-      width: double.infinity,
-      height: height,
-      child: LayoutBuilder(
-        builder: (context, c) {
-          // The photo is drawn with BoxFit.cover, aligned to the bottom.
-          final scale =
-              math.max(c.maxWidth, c.maxHeight * aspect) /
-              (c.maxHeight * aspect);
-          final imgH = c.maxHeight * scale;
-          final imgW = imgH * aspect;
-          final dx = (c.maxWidth - imgW) / 2;
-          final dy = c.maxHeight - imgH;
-          final frameX = dx + _frameX * imgW;
-          final frameY = dy + _frameY * imgH;
-          final titleY = math.max(dy + _titleY * imgH, 130.0);
-          final frameVisible =
-              frameX > c.maxWidth * 0.1 && frameX < c.maxWidth * 0.93;
-          final titleSize = (imgW * 0.0547).clamp(30.0, 80.0);
-          final nameSize = (imgW * 0.0176).clamp(12.0, 26.0);
-          const style = TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.w700,
-            height: 1,
-          );
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: _Lazy(
-                  aspect: aspect,
-                  fill: true,
-                  builder: (_) => Image.asset(
-                    '${_assetDir}cover.jpg',
-                    fit: BoxFit.cover,
-                    alignment: Alignment.bottomCenter,
-                    cacheWidth: 1600,
-                    filterQuality: FilterQuality.low,
-                  ),
-                ),
-              ),
-              // The laptop in the photo shows the LinkedIn profile, as in the
-              // Canva design (a separate image laid over the black screen).
-              Positioned(
-                left: dx + _screenLeft * imgW,
-                top: dy + _screenTop * imgH,
-                width: _screenWidth * imgW,
-                height: _screenHeight * imgH,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(2),
-                  child: _Lazy(
-                    aspect: kPortfolioAspects['cover_screen.jpg']!,
-                    fill: true,
-                    builder: (_) => Image.asset(
-                      '${_assetDir}cover_screen.jpg',
-                      fit: BoxFit.cover,
-                      cacheWidth: 960,
-                      filterQuality: FilterQuality.low,
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                top: titleY - titleSize / 2,
-                child: Column(
-                  children: [
-                    // One line always: scale down instead of wrapping on phones.
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          'MY PORTOFOLIO',
-                          textAlign: TextAlign.center,
-                          style: style.copyWith(
-                            fontSize: titleSize,
-                            letterSpacing: 0,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (!frameVisible) ...[
-                      const SizedBox(height: 14),
-                      Text(
-                        'KIKI TRIANSYAH',
-                        style: style.copyWith(
-                          fontSize: 18,
-                          letterSpacing: 2,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (frameVisible)
-                Positioned(
-                  left: frameX - 80,
-                  width: 160,
-                  top: frameY - nameSize / 2,
-                  child: Text(
-                    'KIKI TRIANSYAH',
-                    textAlign: TextAlign.center,
-                    style: style.copyWith(
-                      fontSize: nameSize,
-                      fontWeight: FontWeight.w300,
-                    ),
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _About extends StatelessWidget {
-  const _About({required this.l});
-
-  final _L l;
-
-  static const _contacts = <(FaIconData, Color, String, String?)>[
-    (
-      FontAwesomeIcons.envelope,
-      Color(0xFFEA4335),
-      'kiki.triansyah93@gmail.com',
-      'mailto:kiki.triansyah93@gmail.com',
-    ),
-    (
-      FontAwesomeIcons.linkedin,
-      Color(0xFF0A66C2),
-      'linkedin.com/in/kiki-triansyah',
-      'https://www.linkedin.com/in/kiki-triansyah/',
-    ),
-    (
-      FontAwesomeIcons.whatsapp,
-      Color(0xFF25D366),
-      '+6287728020907',
-      'https://wa.me/6287728020907',
-    ),
-    (
-      FontAwesomeIcons.github,
-      Color(0xFF181717),
-      '@kikimaxs',
-      'https://github.com/kikimaxs',
-    ),
-    (
-      FontAwesomeIcons.gitlab,
-      Color(0xFFFC6D26),
-      '@kikitriansyah',
-      'https://gitlab.com/kikitriansyah',
-    ),
-    (FontAwesomeIcons.discord, Color(0xFF5865F2), '@kikimaxs', null),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final heading = TextStyle(
-      color: const Color(0xFF2E2E2E),
-      fontSize: l.wide ? 48 : 34,
-      fontWeight: FontWeight.w700,
-    );
-    final body = TextStyle(
-      color: const Color(0xFF2E2E2E),
-      fontSize: l.wide ? 17 : 15,
-      height: 1.5,
-    );
-
-    final profile = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Center(
-          child: Column(
-            children: [
-              SizedBox(
-                width: l.wide ? 200 : 150,
-                child: const _Shot.asset(
-                  'assets/img/photo_profile.jpg',
-                  aspect: 0.7782,
-                  radius: 24,
-                  cache: 500,
-                  semanticLabel: 'Foto profil Kiki Triansyah',
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                'KIKI TRIANSYAH',
-                style: TextStyle(
-                  fontSize: l.wide ? 33 : 22,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.6,
-                  color: Colors.black,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Software Engineer | Mobile Developer',
-                style: TextStyle(
-                  fontSize: l.wide ? 21 : 15,
-                  fontWeight: FontWeight.w300,
-                  color: const Color(0xFF3A444F),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 26),
-        Text('About Me', style: heading),
-        const SizedBox(height: 12),
-        Text.rich(
-          _rich(
-            'I am Kiki Triansyah, a Software Engineer | Mobile Developer with 6 years '
-            'of experience delivering scalable, high-impact applications. I specialize '
-            'in **React Native**, **JavaScript**, and **TypeScript**, with additional '
-            'experience in **Swift (SwiftUI)** and **Flutter**. I also have backend '
-            'experience using **Node.js**, **Express.js**, and databases such as '
-            '**MySQL** and **SQLite**.',
-            body,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text.rich(
-          _rich(
-            'Beyond development, I focus on building products that drive user '
-            'engagement and business value, collaborating closely with teams to align '
-            'technical solutions with product and marketing goals.',
-            body,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text.rich(
-          _rich(
-            'I hold a Bachelor’s degree and am currently open to new opportunities, '
-            'ready to contribute ++Immediately++ or ++ASAP++ going to ++Onsite++ or '
-            '++Remote++, in Indonesia or globally.',
-            body,
-          ),
-        ),
-      ],
-    );
-
-    final contact = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Contact :', style: heading),
-        const SizedBox(height: 22),
-        for (final c in _contacts)
-          _ContactRow(icon: c.$1, color: c.$2, label: c.$3, url: c.$4),
-      ],
-    );
-
-    return _Slide(
-      l: l,
-      gradient: _aboutGradient,
-      child: l.wide
-          ? Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(flex: 11, child: profile),
-                const SizedBox(width: 64),
-                Expanded(flex: 9, child: contact),
-              ],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [profile, const SizedBox(height: 36), contact],
-            ),
-    );
-  }
-}
-
-class _ContactRow extends StatelessWidget {
-  const _ContactRow({
-    required this.icon,
-    required this.color,
+/// A link in running text: the pointer shows a hand, the text turns blue while
+/// the pointer is over it, and a tap opens the address.
+class _LinkText extends StatefulWidget {
+  const _LinkText({
     required this.label,
-    this.url,
+    required this.url,
+    required this.style,
   });
 
-  final FaIconData icon;
-  final Color color;
   final String label;
-  final String? url;
+  final String url;
+  final TextStyle style;
+
+  @override
+  State<_LinkText> createState() => _LinkTextState();
+}
+
+class _LinkTextState extends State<_LinkText> {
+  bool _hover = false;
 
   @override
   Widget build(BuildContext context) {
-    final row = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 9),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: () => launchUrl(
+          Uri.parse(widget.url),
+          mode: LaunchMode.externalApplication,
+        ),
+        child: Text(
+          widget.label,
+          style: widget.style.copyWith(
+            color: _hover ? _linkBlue : widget.style.color,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Chrome: the header above the pages, and the back-to-top button.
+// ---------------------------------------------------------------------------
+
+/// The header: back, title, quick links and the PDF button. It is transparent,
+/// with a soft shade at its top so the controls read on light and dark pages.
+class _TopBar extends StatelessWidget {
+  const _TopBar({
+    required this.wide,
+    required this.current,
+    required this.onJump,
+    required this.onBack,
+    required this.exporting,
+    required this.onExportPdf,
+  });
+
+  final bool wide;
+  final ValueListenable<int> current;
+  final void Function(int index) onJump;
+  final VoidCallback onBack;
+  final ValueListenable<bool> exporting;
+  final VoidCallback onExportPdf;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: _headerH,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0x80000000), Color(0x00000000)],
+        ),
+      ),
       child: Row(
         children: [
-          Container(
-            width: 46,
-            height: 46,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
+          IconButton(
+            tooltip: 'Kembali',
+            onPressed: onBack,
+            icon: const FaIcon(
+              FontAwesomeIcons.arrowLeft,
               color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0x14000000)),
+              size: 16,
             ),
-            child: FaIcon(icon, color: color, size: 22),
           ),
-          const SizedBox(width: 16),
-          Expanded(
+          const SizedBox(width: 4),
+          const Flexible(
             child: Text(
-              label,
+              'Portofolio',
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
+                color: Colors.white,
                 fontSize: 17,
-                color: const Color(0xFF111827),
-                decoration: url == null ? null : TextDecoration.underline,
+                fontWeight: FontWeight.w700,
+                shadows: [Shadow(color: Color(0x73000000), blurRadius: 6)],
               ),
+            ),
+          ),
+          const Spacer(),
+          if (wide)
+            ValueListenableBuilder<int>(
+              valueListenable: current,
+              builder: (context, page, _) => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < _chips.length; i++)
+                    _NavChip(
+                      label: _chips[i].$1,
+                      active:
+                          page >= _chips[i].$2 &&
+                          (i + 1 == _chips.length || page < _chips[i + 1].$2),
+                      onTap: () => onJump(_chips[i].$2),
+                    ),
+                ],
+              ),
+            ),
+          ValueListenableBuilder<bool>(
+            valueListenable: exporting,
+            builder: (context, busy, _) => IconButton(
+              tooltip: 'Unduh PDF',
+              onPressed: busy ? null : onExportPdf,
+              icon: busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const FaIcon(
+                      FontAwesomeIcons.filePdf,
+                      color: Colors.white,
+                      size: 16,
+                    ),
             ),
           ),
         ],
       ),
     );
-    if (url == null) return row;
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: () =>
-          launchUrl(Uri.parse(url!), mode: LaunchMode.externalApplication),
-      child: row,
+  }
+}
+
+class _NavChip extends StatelessWidget {
+  const _NavChip({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: active ? _accent : Colors.transparent,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: active ? const Color(0xFF0B1220) : const Color(0xFFE2E8F0),
+              fontSize: 13,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BackToTop extends StatelessWidget {
+  const _BackToTop({required this.show, required this.onTap});
+
+  final ValueListenable<bool> show;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: show,
+      builder: (context, visible, _) {
+        if (!visible) return const SizedBox.shrink();
+        return Material(
+          color: const Color(0xCC101928),
+          shape: const CircleBorder(side: BorderSide(color: Color(0x33FFFFFF))),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onTap,
+            child: const SizedBox(
+              width: 42,
+              height: 42,
+              child: Center(
+                child: FaIcon(
+                  FontAwesomeIcons.arrowUp,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
 // ---------------------------------------------------------------------------
-// Images, loaded only when they come near the viewport
+// Lazy landscape pages: a page is built only while it is within a screen of the
+// viewport, so the twelve pages and their pictures are not all built at once.
 // ---------------------------------------------------------------------------
 
-/// Lets lazy images know the page has scrolled (throttled by the page).
-class _ScrollTick extends InheritedNotifier<ValueNotifier<int>> {
-  const _ScrollTick({required ValueNotifier<int> tick, required super.child})
-    : super(notifier: tick);
-
-  static ValueNotifier<int>? of(BuildContext context) =>
-      context.getInheritedWidgetOfExactType<_ScrollTick>()?.notifier;
+/// Carries the scroll offset to the pages below; they rebuild as it moves.
+class _ScrollTick extends InheritedNotifier<ValueListenable<double>> {
+  const _ScrollTick({
+    required ValueListenable<double> offset,
+    required super.child,
+  }) : super(notifier: offset);
 }
 
-class _Lazy extends StatefulWidget {
-  const _Lazy({required this.aspect, required this.builder, this.fill = false});
+/// A landscape page. Its place in the scroll is known from its index and the
+/// screen height, so it needs no lookup of render objects: outside the window
+/// around the screen it is a placeholder of the same height.
+class _Lazy extends StatelessWidget {
+  const _Lazy({
+    required this.index,
+    required this.height,
+    required this.aspect,
+    required this.builder,
+  });
 
+  final int index;
+  final double height;
+
+  /// Width over height of the page, so the placeholder keeps its height.
   final double aspect;
   final WidgetBuilder builder;
-  final bool fill;
-
-  @override
-  State<_Lazy> createState() => _LazyState();
-}
-
-class _LazyState extends State<_Lazy> {
-  bool _show = false;
-  bool _active = true;
-  double _viewport = 0;
-  ValueNotifier<int>? _tick;
-
-  @override
-  void activate() {
-    super.activate();
-    _active = true;
-  }
-
-  @override
-  void deactivate() {
-    _active = false;
-    super.deactivate();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _viewport = MediaQuery.sizeOf(context).height;
-    final tick = _ScrollTick.of(context);
-    if (!identical(tick, _tick)) {
-      _tick?.removeListener(_check);
-      _tick = tick;
-      if (!_show) _tick?.addListener(_check);
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _check());
-  }
-
-  void _check() {
-    if (_show || !mounted || !_active || _viewport <= 0) return;
-    final box = context.findRenderObject();
-    if (box is! RenderBox || !box.attached || !box.hasSize) return;
-    final top = box.localToGlobal(Offset.zero).dy;
-    if (top < _viewport + 700 && top + box.size.height > -700) {
-      _tick?.removeListener(_check);
-      setState(() => _show = true);
-    }
-  }
-
-  @override
-  void dispose() {
-    _tick?.removeListener(_check);
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
-    final content = _show
-        ? widget.builder(context)
-        : const ColoredBox(color: Color(0x1FFFFFFF));
-    if (widget.fill) return content;
-    return AspectRatio(aspectRatio: widget.aspect, child: content);
-  }
-}
-
-/// One image from assets/img/portfolio with rounded corners and a hairline
-/// border (no blurred shadows: they are costly while scrolling).
-class _Shot extends StatelessWidget {
-  const _Shot(
-    this.name, {
-    this.height,
-    this.width,
-    this.radius = 14,
-    this.shadow = true,
-    this.cache = 420,
-  }) : _path = null,
-       _aspect = null,
-       semanticLabel = null;
-
-  /// An image outside the portfolio folder, with its own aspect ratio.
-  const _Shot.asset(
-    String path, {
-    required double aspect,
-    this.radius = 14,
-    this.cache = 420,
-    this.semanticLabel,
-  }) : name = path,
-       _path = path,
-       _aspect = aspect,
-       height = null,
-       width = null,
-       shadow = true;
-
-  final String name;
-  final String? _path;
-  final double? _aspect;
-  final double? height;
-  final double? width;
-  final double radius;
-  final bool shadow;
-  final int cache;
-
-  /// Screen-reader description. Defaults to one derived from the file name
-  /// (e.g. every `mola_*` shot reads as "app MOLA TV") so every image in
-  /// the portfolio is announced as *something*, without having to label
-  /// each of the ~50 call sites by hand.
-  final String? semanticLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final aspect = _aspect ?? kPortfolioAspects[name] ?? 1;
-    final path = _path ?? '$_assetDir$name';
-    Widget image = _Lazy(
-      aspect: aspect,
-      builder: (_) => Image.asset(
-        path,
-        fit: BoxFit.cover,
-        cacheWidth: cache,
-        filterQuality: FilterQuality.low,
-        errorBuilder: (_, _, _) => const ColoredBox(color: Color(0x33000000)),
-      ),
+    final tick = context.dependOnInheritedWidgetOfExactType<_ScrollTick>();
+    final offset = tick?.notifier?.value ?? 0.0;
+    final near = (index * height - offset).abs() < 2 * height;
+    return AspectRatio(
+      aspectRatio: aspect,
+      child: near ? builder(context) : const ColoredBox(color: _barColor),
     );
-    image = DecoratedBox(
-      position: DecorationPosition.foreground,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        border: shadow ? Border.all(color: const Color(0x26000000)) : null,
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: image,
-      ),
-    );
-    image = Semantics(
-      label: semanticLabel ?? _autoShotLabel(name),
-      image: true,
-      child: image,
-    );
-    if (height != null) return SizedBox(height: height, child: image);
-    if (width != null) return SizedBox(width: width, child: image);
-    return image;
   }
-}
-
-/// A reasonable screen-reader label guessed from a portfolio image's file
-/// name, so a gallery shot still reads as "screenshot of the X app" instead
-/// of being announced as an unlabelled image.
-String _autoShotLabel(String name) {
-  if (name.startsWith('cover_screen')) {
-    return 'Tangkapan layar profil LinkedIn di laptop';
-  }
-  if (name.startsWith('cover')) {
-    return 'Foto meja kerja dengan laptop, latar sampul portofolio';
-  }
-  const apps = {
-    'mola': 'MOLA TV',
-    'durioo': 'Durioo+',
-    'hadir': 'FWD HadIR',
-    'lifeline': 'LifelineConnect',
-  };
-  for (final entry in apps.entries) {
-    if (!name.startsWith('${entry.key}_')) continue;
-    if (name.contains('logo')) return 'Logo ${entry.value}';
-    if (name.contains('icon')) return 'Ikon aplikasi ${entry.value}';
-    return 'Cuplikan layar aplikasi ${entry.value}';
-  }
-  return 'Gambar portofolio';
 }
