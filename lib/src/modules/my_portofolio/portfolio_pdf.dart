@@ -195,35 +195,33 @@ pw.Page _coverPage(pw.MemoryImage cover) {
       width: format.width,
       height: format.height,
       child: pw.Stack(
-      children: [
-        pw.Positioned.fill(
-          child: pw.Image(cover, fit: pw.BoxFit.cover),
-        ),
-        pw.Center(
-          child: pw.Column(
-            mainAxisSize: pw.MainAxisSize.min,
-            children: [
-              pw.Text(
-                'MY PORTOFOLIO',
-                style: pw.TextStyle(
-                  fontSize: 40,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.white,
+        children: [
+          pw.Positioned.fill(child: pw.Image(cover, fit: pw.BoxFit.cover)),
+          pw.Center(
+            child: pw.Column(
+              mainAxisSize: pw.MainAxisSize.min,
+              children: [
+                pw.Text(
+                  'MY PORTFOLIO',
+                  style: pw.TextStyle(
+                    fontSize: 40,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.white,
+                  ),
                 ),
-              ),
-              pw.SizedBox(height: 10),
-              pw.Text(
-                'KIKI TRIANSYAH',
-                style: pw.TextStyle(fontSize: 16, color: PdfColors.white),
-              ),
-              pw.Text(
-                'Software Engineer | Mobile Developer',
-                style: pw.TextStyle(fontSize: 11, color: PdfColors.white),
-              ),
-            ],
+                pw.SizedBox(height: 10),
+                pw.Text(
+                  'KIKI TRIANSYAH',
+                  style: pw.TextStyle(fontSize: 16, color: PdfColors.white),
+                ),
+                pw.Text(
+                  'Software Developer Apps Mobile',
+                  style: pw.TextStyle(fontSize: 11, color: PdfColors.white),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
       ),
     ),
   );
@@ -307,7 +305,11 @@ pw.Page _projectPage({
 
 pw.Page _aboutPage(pw.MemoryImage profile) {
   const contacts = [
-    ('Email', 'kiki.triansyah93@gmail.com', 'mailto:kiki.triansyah93@gmail.com'),
+    (
+      'Email',
+      'kiki.triansyah93@gmail.com',
+      'mailto:kiki.triansyah93@gmail.com',
+    ),
     (
       'LinkedIn',
       'linkedin.com/in/kiki-triansyah',
@@ -344,13 +346,19 @@ pw.Page _aboutPage(pw.MemoryImage profile) {
                 ),
               ),
               pw.Text(
-                'Software Engineer | Mobile Developer',
-                style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+                'Software Developer Apps Mobile',
+                style: const pw.TextStyle(
+                  fontSize: 10,
+                  color: PdfColors.grey700,
+                ),
               ),
               pw.SizedBox(height: 16),
               pw.Text(
                 'About Me',
-                style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+                style: pw.TextStyle(
+                  fontSize: 18,
+                  fontWeight: pw.FontWeight.bold,
+                ),
               ),
               pw.SizedBox(height: 6),
               pw.RichText(
@@ -388,7 +396,10 @@ pw.Page _aboutPage(pw.MemoryImage profile) {
             children: [
               pw.Text(
                 'Contact :',
-                style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+                style: pw.TextStyle(
+                  fontSize: 18,
+                  fontWeight: pw.FontWeight.bold,
+                ),
               ),
               pw.SizedBox(height: 10),
               for (final c in contacts)

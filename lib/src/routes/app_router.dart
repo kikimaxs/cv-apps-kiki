@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:cv_apps/src/modules/home/home_main.dart';
 import 'package:cv_apps/src/modules/my_cv/views/my_cv_view.dart';
 import 'package:cv_apps/src/modules/my_portofolio/views/my_portofolio_view.dart';
+import 'package:cv_apps/src/modules/my_portofolio/views/portfolio_v2_view.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -24,6 +25,11 @@ class AppRouter {
         path: '/my_portofolio',
         name: 'my_portofolio',
         builder: (context, state) => const MyPortofolioView(),
+      ),
+      GoRoute(
+        path: '/my_portofolio_v2',
+        name: 'my_portofolio_v2',
+        builder: (context, state) => const PortfolioV2View(),
       ),
     ],
   );

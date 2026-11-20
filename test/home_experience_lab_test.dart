@@ -24,15 +24,12 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('lab-tab-1')));
       await tester.pump(const Duration(milliseconds: 900));
-      expect(
-        find.text('Web yang informatif dan mudah digunakan.'),
-        findsOneWidget,
-      );
+      expect(find.text('Informative, easy-to-use websites.'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.byKey(const ValueKey('lab-tab-2')));
       await tester.pump(const Duration(milliseconds: 900));
-      expect(find.text('Dari ide sampai siap dipakai.'), findsOneWidget);
+      expect(find.text('From idea to ready to use.'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     }

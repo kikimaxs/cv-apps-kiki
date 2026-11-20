@@ -32,7 +32,7 @@ void main() {
     expect(tester.binding.transientCallbackCount, greaterThan(0));
     await settle(tester);
     expect(tester.binding.transientCallbackCount, 0);
-    expect(find.text('Geser untuk memutar · ketuk logonya'), findsOneWidget);
+    expect(find.text('Drag to rotate · tap a logo'), findsOneWidget);
 
     // Fling sideways across the bottom of the orbit.
     final center = tester.getCenter(find.byType(HeroOrbit));

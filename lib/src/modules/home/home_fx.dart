@@ -4,6 +4,7 @@ import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:cv_apps/src/modules/home/home_copy.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_animate/flutter_animate.dart';
@@ -1067,7 +1068,7 @@ class _HeroOrbitState extends State<HeroOrbit>
 
     final core = Semantics(
       button: true,
-      label: 'Putar orbit',
+      label: homeText(context, 'Putar orbit'),
       child: Container(
         width: coreD,
         height: coreD,
@@ -1151,14 +1152,14 @@ class _HeroOrbitState extends State<HeroOrbit>
         duration: const Duration(milliseconds: 400),
         child: child,
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           FaIcon(FontAwesomeIcons.handPointer, size: 12, color: _cyan),
           SizedBox(width: 8),
           Flexible(
             child: Text(
-              'Geser untuk memutar · ketuk logonya',
+              homeText(context, 'Geser untuk memutar · ketuk logonya'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(

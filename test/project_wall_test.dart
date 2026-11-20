@@ -30,7 +30,7 @@ void main() {
         ),
       );
       expect(tester.takeException(), isNull);
-      expect(find.text('PROYEK & DAMPAK'), findsOneWidget);
+      expect(find.text('PROJECTS & IMPACT'), findsOneWidget);
       expect(find.text('700K'), findsWidgets);
 
       // Short welcome glide, then it rests by itself.

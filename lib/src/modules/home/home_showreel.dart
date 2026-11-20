@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:cv_apps/src/modules/home/home_copy.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -23,7 +24,7 @@ class ShowreelItem {
   final String duration;
   final Color accent;
 
-  const ShowreelItem({
+  ShowreelItem({
     required this.title,
     required this.tag,
     required this.description,
@@ -34,21 +35,26 @@ class ShowreelItem {
   });
 }
 
-const showreelItems = [
+List<ShowreelItem> showreelItemsFor(BuildContext context) => [
   ShowreelItem(
-    title: 'Durioo+: Released App',
+    title: homeText(context, 'Durioo+: Released App'),
     tag: 'MOBILE • PLAYSTORE • APPSTORE',
-    description:
-        'Project rilis yang saya kerjakan dari awal hingga tayang publik.',
+    description: homeText(
+      context,
+      'Project rilis yang saya kerjakan dari awal hingga tayang publik.',
+    ),
     poster: 'assets/img/durioo_poster.jpg',
     video: 'assets/video/durioo+_memang_berbaloi!.mp4',
     duration: '0:45',
     accent: Color(0xFFFF9F43),
   ),
   ShowreelItem(
-    title: 'Production Showcase',
+    title: homeText(context, 'Production Showcase'),
     tag: 'PROMO • VIDEO • CAMPAIGN',
-    description: 'Digital product berkualitas tinggi yang sudah rilis.',
+    description: homeText(
+      context,
+      'Digital product berkualitas tinggi yang sudah rilis.',
+    ),
     poster: 'assets/img/showcase_poster.jpg',
     video: 'assets/video/0411.mp4',
     duration: '0:19',
@@ -59,9 +65,9 @@ const showreelItems = [
 /// "Showreel" section: poster cards that preview on hover and open a
 /// cinematic player on tap.
 class HomeShowreel extends StatelessWidget {
-  final List<ShowreelItem> items;
+  final List<ShowreelItem>? items;
 
-  const HomeShowreel({super.key, this.items = showreelItems});
+  const HomeShowreel({super.key, this.items});
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +91,7 @@ class HomeShowreel extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                'Karya yang sudah tayang.',
+                homeText(context, 'Karya yang sudah tayang.'),
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: compact ? 31 : 42,
@@ -95,12 +101,19 @@ class HomeShowreel extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              const Text(
-                'Video promosi dari produk yang pernah saya bangun. Pilih dengan panah atau ketuk kartu samping, klik kartu tengah untuk menonton.',
+              Text(
+                homeText(
+                  context,
+                  'Video promosi dari produk yang pernah saya bangun. Pilih dengan panah atau ketuk kartu samping, klik kartu tengah untuk menonton.',
+                ),
                 style: TextStyle(color: _muted, fontSize: 15, height: 1.6),
               ),
               const SizedBox(height: 26),
-              Reveal(child: ShowreelCarousel(items: items)),
+              Reveal(
+                child: ShowreelCarousel(
+                  items: items ?? showreelItemsFor(context),
+                ),
+              ),
             ],
           ),
         ),
@@ -313,8 +326,8 @@ class _ShowreelCarouselState extends State<ShowreelCarousel>
                         child: Semantics(
                           button: true,
                           label: isCentre
-                              ? 'Putar video ${data.title}'
-                              : 'Pilih video ${data.title}',
+                              ? '${homeText(context, 'Putar video')} ${data.title}'
+                              : '${homeText(context, 'Pilih video')} ${data.title}',
                           child: GestureDetector(
                             key: ValueKey('showreel-card-$i'),
                             onTap: () => isCentre ? _open(data) : _select(i),
@@ -418,7 +431,7 @@ class _ShowreelCarouselState extends State<ShowreelCarousel>
               key: const ValueKey('showreel-watch'),
               onPressed: () => _open(item),
               icon: const FaIcon(FontAwesomeIcons.play, size: 14),
-              label: const Text('Tonton video'),
+              label: Text(homeText(context, 'Tonton video')),
               style: FilledButton.styleFrom(
                 backgroundColor: item.accent,
                 foregroundColor: _ink,
@@ -432,14 +445,14 @@ class _ShowreelCarouselState extends State<ShowreelCarousel>
             _ArrowButton(
               key: const ValueKey('showreel-prev'),
               icon: FontAwesomeIcons.arrowLeft,
-              label: 'Video sebelumnya',
+              label: homeText(context, 'Video sebelumnya'),
               color: item.accent,
               onTap: () => _step(-1),
             ),
             _ArrowButton(
               key: const ValueKey('showreel-next'),
               icon: FontAwesomeIcons.arrowRight,
-              label: 'Video berikutnya',
+              label: homeText(context, 'Video berikutnya'),
               color: item.accent,
               onTap: () => _step(1),
             ),
@@ -674,7 +687,7 @@ Future<void> showShowreelPlayer(BuildContext context, ShowreelItem item) {
   return showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
-    barrierLabel: 'Tutup video',
+    barrierLabel: homeText(context, 'Tutup video'),
     barrierColor: Colors.black.withValues(alpha: 0.86),
     transitionDuration: reducedMotion
         ? Duration.zero
@@ -856,7 +869,7 @@ class _ShowreelPlayerState extends State<ShowreelPlayer> {
                         ),
                         IconButton(
                           key: const ValueKey('showreel-close'),
-                          tooltip: 'Tutup (Esc)',
+                          tooltip: homeText(context, 'Tutup (Esc)'),
                           onPressed: () => Navigator.of(context).maybePop(),
                           style: IconButton.styleFrom(
                             backgroundColor: Colors.white.withValues(
@@ -903,11 +916,14 @@ class _ShowreelPlayerState extends State<ShowreelPlayer> {
                                     ),
                                   ),
                                 if (_failed)
-                                  const Center(
+                                  Center(
                                     child: _Chip(
                                       icon:
                                           FontAwesomeIcons.triangleExclamation,
-                                      label: 'VIDEO GAGAL DIMUAT',
+                                      label: homeText(
+                                        context,
+                                        'VIDEO GAGAL DIMUAT',
+                                      ),
                                     ),
                                   ),
                                 if (value.isInitialized && !_closing)
@@ -930,10 +946,13 @@ class _ShowreelPlayerState extends State<ShowreelPlayer> {
                       ),
                     ),
                     // Keyboard shortcuts are only useful with a keyboard.
-                    if (size.width >= 700) ...const [
+                    if (size.width >= 700) ...[
                       SizedBox(height: 10),
                       Text(
-                        'Spasi: putar/jeda  •  M: suara  •  Esc: tutup',
+                        homeText(
+                          context,
+                          'Spasi: putar/jeda  •  M: suara  •  Esc: tutup',
+                        ),
                         style: TextStyle(color: Colors.white38, fontSize: 12),
                       ),
                     ],
@@ -1001,7 +1020,9 @@ class _Controls extends StatelessWidget {
             child: Row(
               children: [
                 IconButton(
-                  tooltip: value.isPlaying ? 'Jeda' : 'Putar',
+                  tooltip: value.isPlaying
+                      ? homeText(context, 'Jeda')
+                      : homeText(context, 'Putar'),
                   onPressed: onTogglePlay,
                   color: Colors.white,
                   icon: FaIcon(
@@ -1011,7 +1032,9 @@ class _Controls extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: value.volume == 0 ? 'Nyalakan suara' : 'Bisukan',
+                  tooltip: value.volume == 0
+                      ? homeText(context, 'Nyalakan suara')
+                      : homeText(context, 'Bisukan'),
                   onPressed: onToggleMute,
                   color: Colors.white,
                   icon: FaIcon(

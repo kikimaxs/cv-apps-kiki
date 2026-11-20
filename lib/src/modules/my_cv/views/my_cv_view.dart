@@ -6,6 +6,8 @@ import 'package:printing/printing.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:ui' as ui;
 import 'package:cv_apps/src/utils/pdf_saver.dart';
+import 'package:cv_apps/src/modules/my_cv/cv_copy.dart';
+import 'package:cv_apps/src/components/app_language_switch.dart';
 import 'package:cv_apps/src/components/icon_svg.dart';
 import 'package:go_router/go_router.dart';
 
@@ -60,15 +62,37 @@ class MyCvView extends StatelessWidget {
       valueListenable: _showHeader,
       builder: (context, show, _) => Scaffold(
         backgroundColor: Colors.white,
+        // The header floats over the page, as in the portfolio: the page
+        // shows through it.
+        extendBodyBehindAppBar: true,
         appBar: show
             ? AppBar(
+                backgroundColor: Colors.transparent,
+                surfaceTintColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                elevation: 0,
+                scrolledUnderElevation: 0,
+                foregroundColor: Colors.white,
+                flexibleSpace: const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0x80000000), Color(0x00000000)],
+                    ),
+                  ),
+                ),
                 leading: IconButton(
-                  tooltip: 'Back',
+                  tooltip: cvText(context, 'Back'),
                   icon: const Icon(Icons.arrow_back),
                   onPressed: () => context.go('/'),
                 ),
-                title: const Text('My CV'),
+                title: Text(cvText(context, 'My CV')),
                 actions: [
+                  const Padding(
+                    padding: EdgeInsets.only(right: 4),
+                    child: AppLanguageSwitch(),
+                  ),
                   ValueListenableBuilder<bool>(
                     valueListenable: _isExporting,
                     builder: (context, exporting, child) {
@@ -77,8 +101,11 @@ class MyCvView extends StatelessWidget {
                         children: [
                           IconButton(
                             tooltip: exporting
-                                ? 'Exporting...'
-                                : 'Quick Export (Single Long Page - Standard)',
+                                ? cvText(context, 'Exporting...')
+                                : cvText(
+                                    context,
+                                    'Quick Export (Single Long Page - Standard)',
+                                  ),
                             onPressed: exporting
                                 ? null
                                 : () =>
@@ -95,7 +122,7 @@ class MyCvView extends StatelessWidget {
                           ),
                           PopupMenuButton<_PdfQuality>(
                             enabled: !exporting,
-                            tooltip: 'More Export Qualities',
+                            tooltip: cvText(context, 'More Export Qualities'),
                             icon: const Icon(Icons.arrow_drop_down),
                             onSelected: (option) => _exportPdf(context, option),
                             itemBuilder: (context) => _exportOptions
@@ -103,7 +130,7 @@ class MyCvView extends StatelessWidget {
                                   (opt) => PopupMenuItem<_PdfQuality>(
                                     value: opt,
                                     child: Text(
-                                      'Export Single Long Page (${opt.label})',
+                                      '${cvText(context, "Export Single Long Page")} (${cvText(context, opt.label)})',
                                     ),
                                   ),
                                 )
@@ -118,50 +145,57 @@ class MyCvView extends StatelessWidget {
             : null,
         body: ValueListenableBuilder<bool>(
           valueListenable: _isExporting,
-          builder: (context, exporting, _) => NotificationListener<ScrollNotification>(
-            onNotification: (n) {
-              _showHeader.value = n.metrics.pixels <= 0;
-              return false;
-            },
-            child: Stack(
-              children: [
-                Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Color(0xFF1A2F43),
-                        Color(0xFF203A53),
-                        Color(0xFF16283A),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
-                  child: Stack(
-                    children: [
-                      const Positioned(
-                        right: -160,
-                        top: -140,
-                        child: _Glow(size: 420, alpha: 0.24),
-                      ),
-                      const Positioned(
-                        left: -170,
-                        bottom: -180,
-                        child: _Glow(size: 440, alpha: 0.18),
-                      ),
-                      SafeArea(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) =>
-                              _buildPage(context, constraints.maxWidth),
+          builder: (context, exporting, _) =>
+              NotificationListener<ScrollNotification>(
+                onNotification: (n) {
+                  _showHeader.value = n.metrics.pixels <= 0;
+                  return false;
+                },
+                child: Stack(
+                  children: [
+                    Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Color(0xFF1A2F43),
+                            Color(0xFF203A53),
+                            Color(0xFF16283A),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
                       ),
-                    ],
-                  ),
+                      child: Stack(
+                        children: [
+                          const Positioned(
+                            right: -160,
+                            top: -140,
+                            child: _Glow(size: 420, alpha: 0.24),
+                          ),
+                          const Positioned(
+                            left: -170,
+                            bottom: -180,
+                            child: _Glow(size: 440, alpha: 0.18),
+                          ),
+                          SafeArea(
+                            child: Padding(
+                              // Below the header while it is shown.
+                              padding: EdgeInsets.only(
+                                top: show ? kToolbarHeight : 0,
+                              ),
+                              child: LayoutBuilder(
+                                builder: (context, constraints) =>
+                                    _buildPage(context, constraints.maxWidth),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (exporting) _buildExportProgressOverlay(context),
+                  ],
                 ),
-                if (exporting) _buildExportProgressOverlay(context),
-              ],
-            ),
-          ),
+              ),
         ),
       ),
     );
@@ -177,9 +211,9 @@ class MyCvView extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.all(isWide ? _kWideInset : 10.0),
             child: MediaQuery(
-              data: MediaQuery.of(context).copyWith(
-                textScaler: TextScaler.linear(scale),
-              ),
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(scale)),
               child: RepaintBoundary(
                 key: _cvBoundaryKey,
                 child: Container(
@@ -265,16 +299,18 @@ class MyCvView extends StatelessWidget {
       _exportProgress.value = 100;
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('PDF export completed. Download started.'),
+          SnackBar(
+            content: Text(
+              cvText(context, 'PDF export completed. Download started.'),
+            ),
           ),
         );
       }
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Failed to export PDF')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(cvText(context, 'Failed to export PDF'))),
+        );
       }
     } finally {
       _isExporting.value = false;
@@ -303,7 +339,7 @@ class MyCvView extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Generating PDF',
+                      cvText(context, 'Generating PDF'),
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                         color: const Color(0xFF0F172A),
@@ -311,7 +347,7 @@ class MyCvView extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '${clamped.toStringAsFixed(0)}% completed',
+                      '${clamped.toStringAsFixed(0)}% ${cvText(context, "completed")}',
                       style: Theme.of(
                         context,
                       ).textTheme.bodyMedium?.copyWith(color: Colors.black87),
@@ -431,7 +467,7 @@ class _Header extends StatelessWidget {
               ),
             ),
             Text(
-              'Software Developer Apps Mobile',
+              cvText(context, 'Software Developer Apps Mobile'),
               style: text.titleMedium?.copyWith(
                 color: Colors.black87,
                 fontWeight: FontWeight.w600,
@@ -603,7 +639,10 @@ class _ContactBar extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(width: 22 * scale, child: Center(child: leading)),
+        SizedBox(
+          width: 22 * scale,
+          child: Center(child: leading),
+        ),
         SizedBox(width: 8 * scale),
         Flexible(
           child: Text(
@@ -808,13 +847,15 @@ class _SkillsPanel extends StatelessWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _group('TOOLS', _tools),
+                _group(cvText(context, 'TOOLS'), _tools),
                 SizedBox(height: rowGap),
-                _group('TECH STACK', _techStack),
+                _group(cvText(context, 'TECH STACK'), _techStack),
                 SizedBox(height: rowGap),
-                _group('SKILLS', _skills),
+                _group(cvText(context, 'SKILLS'), _skills),
                 SizedBox(height: rowGap),
-                _group('LANGUAGES', _languages),
+                _group(cvText(context, 'LANGUAGES'), [
+                  for (final l in _languages) cvText(context, l),
+                ]),
               ],
             );
           }
@@ -824,18 +865,24 @@ class _SkillsPanel extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: _group('TOOLS', _tools)),
+                  Expanded(child: _group(cvText(context, 'TOOLS'), _tools)),
                   const SizedBox(width: _kColumnGap),
-                  Expanded(child: _group('TECH STACK', _techStack)),
+                  Expanded(
+                    child: _group(cvText(context, 'TECH STACK'), _techStack),
+                  ),
                 ],
               ),
               SizedBox(height: rowGap),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: _group('SKILLS', _skills)),
+                  Expanded(child: _group(cvText(context, 'SKILLS'), _skills)),
                   const SizedBox(width: _kColumnGap),
-                  Expanded(child: _group('LANGUAGES', _languages)),
+                  Expanded(
+                    child: _group(cvText(context, 'LANGUAGES'), [
+                      for (final l in _languages) cvText(context, l),
+                    ]),
+                  ),
                 ],
               ),
             ],
@@ -868,7 +915,10 @@ class _CvContent extends StatelessWidget {
             icon: Icons.person,
             scale: scale,
             lineHeight: 6 * scale + 2,
-            header: _ContentHeader(color: Colors.black, text: 'PROFILE'),
+            header: _ContentHeader(
+              color: Colors.black,
+              text: cvText(context, 'PROFILE'),
+            ),
           ),
           _TimelineItem(
             isLast: true,
@@ -877,14 +927,17 @@ class _CvContent extends StatelessWidget {
             dotTop: 44 * scale,
             rightTopSpace: 4 * scale,
             child: Text(
-              'A strategic Mobile Developer who transforms business objectives into high-impact mobile applications. I architect and deliver robust, scalable, and user-centric apps from concept to launch, leveraging deep expertise in Flutter, React Native, and native iOS/Android development. My end-to-end ownership—spanning from product discovery and system design to App Store and Play Store deployment—consistently accelerates development cycles and enhances user engagement. I thrive in collaborative environments, translating complex requirements into reliable, high-performance software that drives measurable business growth.',
+              cvText(
+                context,
+                'A strategic Mobile Developer who transforms business objectives into high-impact mobile applications. I architect and deliver robust, scalable, and user-centric apps from concept to launch, leveraging deep expertise in Flutter, React Native, and native iOS/Android development. My end-to-end ownership—spanning from product discovery and system design to App Store and Play Store deployment—consistently accelerates development cycles and enhances user engagement. I thrive in collaborative environments, translating complex requirements into reliable, high-performance software that drives measurable business growth.',
+              ),
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
           _RailGap(height: 24, scale: scale),
           _TimelineSection(
             icon: Icons.work,
-            title: 'WORK EXPERIENCE',
+            title: cvText(context, 'WORK EXPERIENCE'),
             scale: scale,
             lineHeight: 6 * scale + 2,
             color: Colors.black,
@@ -894,76 +947,213 @@ class _CvContent extends StatelessWidget {
             items: [
               _ExperienceItem(
                 company: 'SEI ASIA',
-                period: 'Freelance Project : 2025 December – 2025 March',
-                role: 'Mobile Developer • Flutter Developer',
+                period: cvText(
+                  context,
+                  'Freelance Project : 2025 December – 2026 March',
+                ),
+                role: cvText(context, 'Mobile Developer • Flutter Developer'),
                 points: [
-                  'Develop LifelineConnect mobile application for Android & iOS platforms',
-                  'Build the application using Dart (Flutter) with Bloc state management and Clean Architecture principles',
-                  'Implement architecture patterns including MVVM, along with Go Router and Provider for navigation and state handling',
-                  'Develop core features such as member management, group management, chat, voice chat, and voice call',
-                  'Integrate IoT device connectivity (e.g., Smart Watch, Dispenser, AirPods, Smart Door Lock) with the mobile application',
-                  'Integrate backend services using RESTful APIs',
-                  'Manage source code and CI/CD pipelines using GitHub CI/CD',
+                  cvText(
+                    context,
+                    'Develop LifelineConnect mobile application for Android & iOS platforms',
+                  ),
+                  cvText(
+                    context,
+                    'Build the application using Dart (Flutter) with Bloc state management and Clean Architecture principles',
+                  ),
+                  cvText(
+                    context,
+                    'Implement architecture patterns including MVVM, along with Go Router and Provider for navigation and state handling',
+                  ),
+                  cvText(
+                    context,
+                    'Develop core features such as member management, group management, chat, voice chat, and voice call',
+                  ),
+                  cvText(
+                    context,
+                    'Integrate IoT device connectivity (e.g., Smart Watch, Dispenser, AirPods, Smart Door Lock) with the mobile application',
+                  ),
+                  cvText(
+                    context,
+                    'Integrate backend services using RESTful APIs',
+                  ),
+                  cvText(
+                    context,
+                    'Manage source code and CI/CD pipelines using GitHub CI/CD',
+                  ),
                 ],
               ),
               _ExperienceItem(
                 company: 'AKASIA',
-                period: 'Contract Base Project : 2025 Juli – 2025 September',
-                role: 'Mobile Developer • React Native Developer',
+                period: cvText(
+                  context,
+                  'Contract Base Project : 2025 Juli – 2025 September',
+                ),
+                role: cvText(
+                  context,
+                  'Mobile Developer • React Native Developer',
+                ),
                 points: [
-                  'Develop Hadir application for client PT FWD Insurance Indonesia',
-                  'Build the project end-to-end, from development to deployment on internal company server',
-                  'Develop cross-platform mobile applications (Android & iOS) using React Native',
-                  'Utilize modern tech stack including TypeScript, Tailwind CSS, Redux Saga, and React Navigation',
-                  'Implement core features such as user attendance (clock in/out), room booking, and overtime management',
-                  'Apply geofencing validation (±300m radius) to ensure attendance can only be performed within office area',
-                  'Implement anti–fake GPS detection to prevent location spoofing',
-                  'Develop reporting and validation systems for user attendance',
-                  'Integrate backend services using RESTful APIs',
-                  'Manage source code and CI/CD pipelines using Azure CI/CD',
+                  cvText(
+                    context,
+                    'Develop Hadir application for client PT FWD Insurance Indonesia',
+                  ),
+                  cvText(
+                    context,
+                    'Build the project end-to-end, from development to deployment on internal company server',
+                  ),
+                  cvText(
+                    context,
+                    'Develop cross-platform mobile applications (Android & iOS) using React Native',
+                  ),
+                  cvText(
+                    context,
+                    'Utilize modern tech stack including TypeScript, Tailwind CSS, Redux Saga, and React Navigation',
+                  ),
+                  cvText(
+                    context,
+                    'Implement core features such as user attendance (clock in/out), room booking, and overtime management',
+                  ),
+                  cvText(
+                    context,
+                    'Apply geofencing validation (±300m radius) to ensure attendance can only be performed within office area',
+                  ),
+                  cvText(
+                    context,
+                    'Implement anti–fake GPS detection to prevent location spoofing',
+                  ),
+                  cvText(
+                    context,
+                    'Develop reporting and validation systems for user attendance',
+                  ),
+                  cvText(
+                    context,
+                    'Integrate backend services using RESTful APIs',
+                  ),
+                  cvText(
+                    context,
+                    'Manage source code and CI/CD pipelines using Azure CI/CD',
+                  ),
                 ],
               ),
               _ExperienceItem(
                 company: 'Durioo+',
-                period: 'Contract : 2023 September – 2025 January',
-                role: 'Mobile Apps Developer • React Native Developer',
+                period: cvText(
+                  context,
+                  'Contract : 2023 September – 2025 January',
+                ),
+                role: cvText(
+                  context,
+                  'Mobile Apps Developer • React Native Developer',
+                ),
                 points: [
-                  'Develop cross-platform mobile applications (Android & iOS) using Expo React Native',
-                  'Build projects end-to-end, from development to deployment on App Store & Play Store',
-                  'Implement custom components, including Video Player and tailored UI/UX features',
-                  'Integrate backend services using RESTful APIs',
-                  'Manage Over-the-Air (OTA) updates for seamless app releases',
-                  'Implement push notifications and user tracking using Firebase',
-                  'Handle subscription and in-app purchase systems via Play Store and App Store',
-                  'Develop features such as offline video playback, TV casting, and video download for subscribed users',
-                  'Manage source code and CI/CD pipelines using GitLab CI/CD',
+                  cvText(
+                    context,
+                    'Develop cross-platform mobile applications (Android & iOS) using Expo React Native',
+                  ),
+                  cvText(
+                    context,
+                    'Build projects end-to-end, from development to deployment on App Store & Play Store',
+                  ),
+                  cvText(
+                    context,
+                    'Implement custom components, including Video Player and tailored UI/UX features',
+                  ),
+                  cvText(
+                    context,
+                    'Integrate backend services using RESTful APIs',
+                  ),
+                  cvText(
+                    context,
+                    'Manage Over-the-Air (OTA) updates for seamless app releases',
+                  ),
+                  cvText(
+                    context,
+                    'Implement push notifications and user tracking using Firebase',
+                  ),
+                  cvText(
+                    context,
+                    'Handle subscription and in-app purchase systems via Play Store and App Store',
+                  ),
+                  cvText(
+                    context,
+                    'Develop features such as offline video playback, TV casting, and video download for subscribed users',
+                  ),
+                  cvText(
+                    context,
+                    'Manage source code and CI/CD pipelines using GitLab CI/CD',
+                  ),
                 ],
               ),
               _ExperienceItem(
                 company: 'MOLA',
-                period: 'Fulltime : 2020 January – 2023 January',
-                role:
-                    'Mobile Engineer • React Native Developer & iOS Developer',
+                period: cvText(
+                  context,
+                  'Fulltime : 2020 January – 2023 January',
+                ),
+                role: cvText(
+                  context,
+                  'Mobile Engineer • React Native Developer & iOS Developer',
+                ),
                 points: [
-                  'Develop cross-platform mobile applications (Android & iOS) using React Native, and native iOS applications using SwiftUI',
-                  'Build projects end-to-end, from development to deployment on App Store and Play Store',
-                  'Implement native module bridging (e.g., Video Player) for iOS and Android integration',
-                  'Develop key features such as Live Quiz, Inbox, Push Notifications, Social Media Sharing, and Subscription systems',
-                  'Integrate user analytics tracking and monitoring tools (e.g., Bugsnag, New Relic)',
-                  'Integrate backend services via RESTful APIs',
-                  'Manage source code and CI/CD pipelines using GitLab CI/CD',
+                  cvText(
+                    context,
+                    'Develop cross-platform mobile applications (Android & iOS) using React Native, and native iOS applications using SwiftUI',
+                  ),
+                  cvText(
+                    context,
+                    'Build projects end-to-end, from development to deployment on App Store and Play Store',
+                  ),
+                  cvText(
+                    context,
+                    'Implement native module bridging (e.g., Video Player) for iOS and Android integration',
+                  ),
+                  cvText(
+                    context,
+                    'Develop key features such as Live Quiz, Inbox, Push Notifications, Social Media Sharing, and Subscription systems',
+                  ),
+                  cvText(
+                    context,
+                    'Integrate user analytics tracking and monitoring tools (e.g., Bugsnag, New Relic)',
+                  ),
+                  cvText(
+                    context,
+                    'Integrate backend services via RESTful APIs',
+                  ),
+                  cvText(
+                    context,
+                    'Manage source code and CI/CD pipelines using GitLab CI/CD',
+                  ),
                 ],
               ),
               _ExperienceItem(
                 company: 'Binar Academy',
-                period: 'Contract : 2019 July – 2020 January',
-                role: 'Talent Frontend Developer • React Native Developer',
+                period: cvText(context, 'Contract : 2019 July – 2020 January'),
+                role: cvText(
+                  context,
+                  'Talent Frontend Developer • React Native Developer',
+                ),
                 points: [
-                  'Develop and maintain MOLA application for client (MOLA TV)',
-                  'Develop mobile applications for Android & iOS platforms (MOLA & Super Soccer Apps)',
-                  'Build and maintain features such as Article and Podcast components in Super Soccer Apps',
-                  'Handle end-to-end mobile development and deployment to App Store & Play Store',
-                  'Manage source code and CI/CD pipelines using GitLab CI/CD',
+                  cvText(
+                    context,
+                    'Develop and maintain MOLA application for client (MOLA TV)',
+                  ),
+                  cvText(
+                    context,
+                    'Develop mobile applications for Android & iOS platforms (MOLA & Super Soccer Apps)',
+                  ),
+                  cvText(
+                    context,
+                    'Build and maintain features such as Article and Podcast components in Super Soccer Apps',
+                  ),
+                  cvText(
+                    context,
+                    'Handle end-to-end mobile development and deployment to App Store & Play Store',
+                  ),
+                  cvText(
+                    context,
+                    'Manage source code and CI/CD pipelines using GitLab CI/CD',
+                  ),
                 ],
               ),
             ],
@@ -971,7 +1161,7 @@ class _CvContent extends StatelessWidget {
           _RailGap(height: 24, scale: scale),
           _TimelineSection(
             icon: Icons.folder_open,
-            title: 'PROJECT',
+            title: cvText(context, 'PROJECT'),
             scale: scale,
             lineHeight: 6 * scale + 2,
             color: Colors.black,
@@ -981,36 +1171,51 @@ class _CvContent extends StatelessWidget {
             items: [
               _ProjectItem(
                 name: 'LifelineConnect Apps',
-                period: '2025 December – 2026 March',
-                summary: 'Social Media Apps',
+                period: cvText(context, '2025 December – 2026 March'),
+                summary: cvText(context, 'Social Media Apps'),
                 details: [
-                  'Member management, group management, chat, voice chat, and voice call',
-                  'IoT device connectivity (e.g., Smart Watch, Dispenser, AirPods, Smart Door Lock) with the mobile application',
+                  cvText(
+                    context,
+                    'Member management, group management, chat, voice chat, and voice call',
+                  ),
+                  cvText(
+                    context,
+                    'IoT device connectivity (e.g., Smart Watch, Dispenser, AirPods, Smart Door Lock) with the mobile application',
+                  ),
                 ],
               ),
               _ProjectItem(
                 name: 'Hadir Apps (Internal)',
-                period: '2025 July – 2025 September',
-                summary: 'HR Apps',
+                period: cvText(context, '2025 July – 2025 September'),
+                summary: cvText(context, 'HR Apps'),
                 details: [
-                  'Absence Clock In and Out, Booking Room, Overtime, Report',
+                  cvText(
+                    context,
+                    'Absence Clock In and Out, Booking Room, Overtime, Report',
+                  ),
                 ],
               ),
               _ProjectItem(
                 name: 'Durioo+ Apps',
-                period: '2023 September – 2025 January',
-                summary:
-                    'Multi Platform Android Mobile and iOS Mobile, Android TV, TVOS',
-                details: ['Watching Movies content for kids muslim'],
+                period: cvText(context, '2023 September – 2025 January'),
+                summary: cvText(
+                  context,
+                  'Multi Platform Android Mobile and iOS Mobile, Android TV, TVOS',
+                ),
+                details: [
+                  cvText(context, 'Watching Movies content for kids muslim'),
+                ],
               ),
               _ProjectItem(
                 name: 'MOLA Apps',
-                period: '2019 July – 2023 January',
-                summary:
-                    'Multi Platform Android Mobile and iOS Mobile, Android TV, TVOS',
+                period: cvText(context, '2019 July – 2023 January'),
+                summary: cvText(
+                  context,
+                  'Multi Platform Android Mobile and iOS Mobile, Android TV, TVOS',
+                ),
                 details: [
-                  'Watching Movies content for kids & adult',
-                  'Live Streaming sport football and many',
+                  cvText(context, 'Watching Movies content for kids & adult'),
+                  cvText(context, 'Live Streaming sport football and many'),
                 ],
               ),
             ],
@@ -1018,31 +1223,34 @@ class _CvContent extends StatelessWidget {
           _RailGap(height: 24, scale: scale),
           _TimelineSection(
             icon: Icons.school,
-            title: 'EDUCATION',
+            title: cvText(context, 'EDUCATION'),
             scale: scale,
             lineHeight: 6 * scale + 2,
             color: Colors.black,
             itemGap: 16,
             dotTop: 8 * scale,
             rightTopSpace: 4 * scale,
-            items: const [
+            items: [
               _EducationItem(
-                degree: 'Bachelor of Information Technology',
+                degree: cvText(context, 'Bachelor of Information Technology'),
                 period: '2012 - 2016',
                 school: 'Universitas Muhammadiyah Yogyakarta',
-                gpa: 'GPA: 3.47 / 4.00',
+                gpa: cvText(context, 'GPA: 3.47 / 4.00'),
               ),
               _EducationItem(
-                degree: 'Training Team Project Binar Academy Batch 8',
-                period: '2018 July - 2018 Oct ',
-                school: 'Binar Academy at Yogyakarta',
-                gpa: 'Frontend Developer As React JS',
+                degree: cvText(
+                  context,
+                  'Training Team Project Binar Academy Batch 8',
+                ),
+                period: cvText(context, '2018 July - 2018 Oct '),
+                school: cvText(context, 'Binar Academy at Yogyakarta'),
+                gpa: cvText(context, 'Frontend Developer As React JS'),
               ),
               _EducationItem(
-                degree: 'Training Project Binar+ Batch 1',
-                period: '2018 Des - 2019 Mar',
-                school: 'Binar Academy at BSD City',
-                gpa: 'Mobile Developer As React Native',
+                degree: cvText(context, 'Training Project Binar+ Batch 1'),
+                period: cvText(context, '2018 Des - 2019 Mar'),
+                school: cvText(context, 'Binar Academy at BSD City'),
+                gpa: cvText(context, 'Mobile Developer As React Native'),
               ),
             ],
           ),
@@ -1183,9 +1391,7 @@ class _ContentHeader extends StatelessWidget {
             ),
             child: Text(
               text,
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w800,
                 letterSpacing: 0.8,
               ),

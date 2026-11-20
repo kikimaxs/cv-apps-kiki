@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cv_apps/src/modules/home/home_copy.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'home_motion.dart';
@@ -17,31 +18,37 @@ class HomeExperienceLab extends StatefulWidget {
 class _HomeExperienceLabState extends State<HomeExperienceLab> {
   int _selected = 0;
 
-  static const _items = [
+  List<_LabItem> _itemsFor(BuildContext context) => [
     _LabItem(
-      label: 'Mobile app',
+      label: homeText(context, 'Mobile app'),
       eyebrow: 'FLUTTER / IOS / ANDROID',
-      title: 'Pengalaman mobile yang terasa natural.',
-      description:
-          'Antarmuka responsif, navigasi jelas, dan interaksi yang membantu pengguna menyelesaikan tugasnya.',
+      title: homeText(context, 'Pengalaman mobile yang terasa natural.'),
+      description: homeText(
+        context,
+        'Antarmuka responsif, navigasi jelas, dan interaksi yang membantu pengguna menyelesaikan tugasnya.',
+      ),
       icon: FontAwesomeIcons.mobileScreenButton,
       accent: Color(0xFF67D4FF),
     ),
     _LabItem(
-      label: 'Web platform',
+      label: homeText(context, 'Web platform'),
       eyebrow: 'WEB / UI / DATA',
-      title: 'Web yang informatif dan mudah digunakan.',
-      description:
-          'Tata letak yang menyesuaikan layar, komponen konsisten, dan informasi penting yang cepat ditemukan.',
+      title: homeText(context, 'Web yang informatif dan mudah digunakan.'),
+      description: homeText(
+        context,
+        'Tata letak yang menyesuaikan layar, komponen konsisten, dan informasi penting yang cepat ditemukan.',
+      ),
       icon: FontAwesomeIcons.laptopCode,
       accent: Color(0xFFB49BFF),
     ),
     _LabItem(
-      label: 'Delivery',
+      label: homeText(context, 'Delivery'),
       eyebrow: 'API / QUALITY / RELEASE',
-      title: 'Dari ide sampai siap dipakai.',
-      description:
-          'Alur kerja yang menghubungkan kebutuhan, implementasi, pengujian, dan rilis menjadi satu produk.',
+      title: homeText(context, 'Dari ide sampai siap dipakai.'),
+      description: homeText(
+        context,
+        'Alur kerja yang menghubungkan kebutuhan, implementasi, pengujian, dan rilis menjadi satu produk.',
+      ),
       icon: FontAwesomeIcons.rocket,
       accent: Color(0xFF79E4BA),
     ),
@@ -53,7 +60,7 @@ class _HomeExperienceLabState extends State<HomeExperienceLab> {
     final duration = reducedMotion
         ? Duration.zero
         : const Duration(milliseconds: 420);
-    final item = _items[_selected];
+    final item = _itemsFor(context)[_selected];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Center(
@@ -62,8 +69,8 @@ class _HomeExperienceLabState extends State<HomeExperienceLab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'INTERACTIVE CAPABILITIES',
+              Text(
+                homeText(context, 'INTERACTIVE CAPABILITIES'),
                 style: TextStyle(
                   color: Color(0xFF67D4FF),
                   fontSize: 12,
@@ -73,7 +80,7 @@ class _HomeExperienceLabState extends State<HomeExperienceLab> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Lihat cara saya berpikir dan membangun.',
+                homeText(context, 'Lihat cara saya berpikir dan membangun.'),
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: MediaQuery.sizeOf(context).width < 600 ? 31 : 42,
@@ -83,8 +90,11 @@ class _HomeExperienceLabState extends State<HomeExperienceLab> {
                 ),
               ),
               const SizedBox(height: 12),
-              const Text(
-                'Pilih area keahlian untuk melihat gambaran interaktif dari pendekatan yang saya gunakan.',
+              Text(
+                homeText(
+                  context,
+                  'Pilih area keahlian untuk melihat gambaran interaktif dari pendekatan yang saya gunakan.',
+                ),
                 style: TextStyle(color: _muted, fontSize: 15, height: 1.6),
               ),
               const SizedBox(height: 24),
@@ -92,10 +102,10 @@ class _HomeExperienceLabState extends State<HomeExperienceLab> {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  for (var i = 0; i < _items.length; i++)
+                  for (var i = 0; i < _itemsFor(context).length; i++)
                     _LabTab(
                       key: ValueKey('lab-tab-$i'),
-                      item: _items[i],
+                      item: _itemsFor(context)[i],
                       selected: _selected == i,
                       duration: duration,
                       onTap: () => setState(() => _selected = i),
@@ -143,7 +153,7 @@ class _HomeExperienceLabState extends State<HomeExperienceLab> {
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              SizedBox(height: 20),
               LayoutBuilder(
                 builder: (context, constraints) {
                   final columns = constraints.maxWidth >= 850 ? 3 : 1;
@@ -153,23 +163,26 @@ class _HomeExperienceLabState extends State<HomeExperienceLab> {
                     spacing: 14,
                     runSpacing: 14,
                     children: [
-                      for (final detail in const [
+                      for (final detail in [
                         (
                           '01',
-                          'Responsif',
-                          'Rapi di ponsel hingga desktop.',
+                          homeText(context, 'Responsif'),
+                          homeText(context, 'Rapi di ponsel hingga desktop.'),
                           FontAwesomeIcons.laptop,
                         ),
                         (
                           '02',
-                          'Interaktif',
-                          'Gerak yang memberi umpan balik.',
+                          homeText(context, 'Interaktif'),
+                          homeText(context, 'Gerak yang memberi umpan balik.'),
                           FontAwesomeIcons.handPointer,
                         ),
                         (
                           '03',
-                          'Siap rilis',
-                          'Dibangun dengan alur kerja yang jelas.',
+                          homeText(context, 'Siap rilis'),
+                          homeText(
+                            context,
+                            'Dibangun dengan alur kerja yang jelas.',
+                          ),
                           FontAwesomeIcons.circleCheck,
                         ),
                       ])
@@ -457,12 +470,12 @@ class _MobilePreview extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 25),
-          const Text(
-            'Good morning,',
+          Text(
+            homeText(context, 'Good morning,'),
             style: TextStyle(color: _muted, fontSize: 10),
           ),
-          const Text(
-            'Your dashboard',
+          Text(
+            homeText(context, 'Your dashboard'),
             style: TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w800,
@@ -482,8 +495,8 @@ class _MobilePreview extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'ACTIVE PROJECT',
+                Text(
+                  homeText(context, 'ACTIVE PROJECT'),
                   style: TextStyle(
                     color: _ink,
                     fontSize: 9,
@@ -492,8 +505,8 @@ class _MobilePreview extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                const Text(
-                  'Build great apps',
+                Text(
+                  homeText(context, 'Build great apps'),
                   style: TextStyle(
                     color: _ink,
                     fontSize: 12,
@@ -617,7 +630,7 @@ class _WebPreview extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Overview',
+                  homeText(context, 'Overview'),
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 17,
@@ -760,14 +773,14 @@ class _DeliveryPreview extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      const [
-                        'Discovery',
-                        'Development',
-                        'Quality check',
-                        'Release',
+                      [
+                        homeText(context, 'Discovery'),
+                        homeText(context, 'Development'),
+                        homeText(context, 'Quality check'),
+                        homeText(context, 'Release'),
                       ][i],
                       style: const TextStyle(
                         color: Colors.white,

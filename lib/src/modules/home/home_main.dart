@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:cv_apps/src/modules/home/home_copy.dart';
+import 'package:cv_apps/src/components/app_language_switch.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -21,6 +23,9 @@ import 'home_showreel.dart';
 /// keeps them in the shrunken font. Add any new icon used only there too.
 const List<FaIconData> kHomeFaIcons = [
   FontAwesomeIcons.play,
+  FontAwesomeIcons.addressCard,
+  FontAwesomeIcons.asterisk,
+  FontAwesomeIcons.trophy,
   FontAwesomeIcons.pause,
   FontAwesomeIcons.arrowLeft,
   FontAwesomeIcons.clock,
@@ -194,7 +199,7 @@ class _HomeMainState extends State<HomeMain> {
                           ),
                         ),
                         const SizedBox(height: 64),
-                        const HomeShowreel(),
+                        HomeShowreel(),
                         const SizedBox(height: 88),
                         const Reveal(
                           child: RepaintBoundary(child: HomeExperienceLab()),
@@ -322,21 +327,21 @@ class _HomeMainState extends State<HomeMain> {
                       foregroundColor: Colors.white70,
                     ),
                     onPressed: () => _animateToPage(0),
-                    child: const Text('Beranda'),
+                    child: Text(homeText(context, 'Beranda')),
                   ),
                   TextButton(
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.white70,
                     ),
                     onPressed: () => _animateToPage(1),
-                    child: const Text('Keahlian'),
+                    child: Text(homeText(context, 'Keahlian')),
                   ),
                   TextButton(
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.white70,
                     ),
-                    onPressed: () => context.go('/my_portofolio'),
-                    child: const Text('Portofolio'),
+                    onPressed: () => context.go('/my_portofolio_v2'),
+                    child: Text(homeText(context, 'Portofolio')),
                   ),
                   TextButton(
                     key: const ValueKey('nav-cv-button'),
@@ -348,6 +353,8 @@ class _HomeMainState extends State<HomeMain> {
                   ),
                   const SizedBox(width: 14),
                 ],
+                AppLanguageSwitch(compact: mobile),
+                SizedBox(width: mobile ? 6 : 10),
                 FilledButton.icon(
                   onPressed: () => _animateToPage(2),
                   icon: FaIcon(
@@ -356,7 +363,14 @@ class _HomeMainState extends State<HomeMain> {
                         : FontAwesomeIcons.comments,
                     size: 16,
                   ),
-                  label: Text(mobile ? 'Kontak' : 'Mari bicara'),
+                  // On the narrowest phones only the icon fits.
+                  label: width < 360
+                      ? const SizedBox.shrink()
+                      : Text(
+                          mobile
+                              ? homeText(context, 'Kontak')
+                              : homeText(context, 'Mari bicara'),
+                        ),
                   style: FilledButton.styleFrom(
                     backgroundColor: _accent,
                     foregroundColor: _background,
@@ -442,8 +456,8 @@ class _HomeMainState extends State<HomeMain> {
             border: Border.all(color: _accent.withValues(alpha: 0.26)),
             borderRadius: BorderRadius.circular(30),
           ),
-          child: const Text(
-            'SOFTWARE DEVELOPER  /  FLUTTER SPECIALIST',
+          child: Text(
+            homeText(context, 'SOFTWARE DEVELOPER  /  FLUTTER SPECIALIST'),
             style: TextStyle(
               color: _accent,
               fontSize: 10,
@@ -454,7 +468,10 @@ class _HomeMainState extends State<HomeMain> {
         ),
         const SizedBox(height: 24),
         AnimatedHeadline(
-          text: 'Membangun produk digital yang terasa tepat.',
+          text: homeText(
+            context,
+            'Membangun produk digital yang terasa tepat.',
+          ),
           highlight: const {4, 5},
           style: TextStyle(
             color: Colors.white,
@@ -467,8 +484,11 @@ class _HomeMainState extends State<HomeMain> {
         const SizedBox(height: 20),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 580),
-          child: const Text(
-            'Saya Kiki Triansyah. Saya merancang dan mengembangkan aplikasi mobile serta website, dari ide awal sampai siap digunakan orang banyak.',
+          child: Text(
+            homeText(
+              context,
+              'Saya Kiki Triansyah. Saya merancang dan mengembangkan aplikasi mobile serta website, dari ide awal sampai siap digunakan orang banyak.',
+            ),
             style: TextStyle(
               color: Color(0xFFB8C8DA),
               fontSize: 16,
@@ -484,7 +504,7 @@ class _HomeMainState extends State<HomeMain> {
             FilledButton.icon(
               onPressed: () => _animateToPage(2),
               icon: const FaIcon(FontAwesomeIcons.arrowRight, size: 15),
-              label: const Text('Diskusikan proyek'),
+              label: Text(homeText(context, 'Diskusikan proyek')),
               style: FilledButton.styleFrom(
                 backgroundColor: _accent,
                 foregroundColor: _background,
@@ -496,9 +516,9 @@ class _HomeMainState extends State<HomeMain> {
               ),
             ),
             OutlinedButton.icon(
-              onPressed: () => context.go('/my_portofolio'),
+              onPressed: () => context.go('/my_portofolio_v2'),
               icon: const FaIcon(FontAwesomeIcons.briefcase, size: 15),
-              label: const Text('Lihat portofolio'),
+              label: Text(homeText(context, 'Lihat portofolio')),
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.white,
                 side: const BorderSide(color: Color(0xFF41536A)),
@@ -512,7 +532,7 @@ class _HomeMainState extends State<HomeMain> {
               key: const ValueKey('hero-cv-button'),
               onPressed: () => context.go('/my_cv'),
               icon: const FaIcon(FontAwesomeIcons.fileLines, size: 15),
-              label: const Text('Lihat CV'),
+              label: Text(homeText(context, 'Lihat CV')),
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.white,
                 side: const BorderSide(color: Color(0xFF41536A)),
@@ -525,21 +545,21 @@ class _HomeMainState extends State<HomeMain> {
           ],
         ),
         const SizedBox(height: 32),
-        const Wrap(
+        Wrap(
           spacing: 22,
           runSpacing: 8,
           children: [
             _HeroProof(
               icon: FontAwesomeIcons.mobileScreenButton,
-              label: 'Mobile & web',
+              label: homeText(context, 'Mobile & web'),
             ),
             _HeroProof(
               icon: FontAwesomeIcons.rocket,
-              label: 'Dari ide hingga rilis',
+              label: homeText(context, 'Dari ide hingga rilis'),
             ),
             _HeroProof(
               icon: FontAwesomeIcons.wandMagicSparkles,
-              label: 'Detail yang terasa',
+              label: homeText(context, 'Detail yang terasa'),
             ),
           ],
         ),
@@ -590,12 +610,15 @@ class _HomeMainState extends State<HomeMain> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildSectionHeader(
-              'APA YANG SAYA KERJAKAN',
-              'Solusi yang dibangun untuk kebutuhan nyata.',
+              homeText(context, 'APA YANG SAYA KERJAKAN'),
+              homeText(context, 'Solusi yang dibangun untuk kebutuhan nyata.'),
             ),
             const SizedBox(height: 14),
-            const Text(
-              'Dari tampilan yang mudah dipakai hingga sistem yang mendukungnya, setiap bagian dibuat agar bekerja sebagai satu produk.',
+            Text(
+              homeText(
+                context,
+                'Dari tampilan yang mudah dipakai hingga sistem yang mendukungnya, setiap bagian dibuat agar bekerja sebagai satu produk.',
+              ),
               style: TextStyle(
                 color: Color(0xFFB8C8DA),
                 fontSize: 16,
@@ -613,9 +636,11 @@ class _HomeMainState extends State<HomeMain> {
                         ? constraints.maxWidth
                         : (constraints.maxWidth - 32) / 3,
                     child: _buildServiceCard(
-                      title: "Web & Mobile Development",
-                      description:
-                          "Saya bisa membuat project Web dan Mobile Cross-platform maupun Native iOS & Android dengan performa tinggi dan desain responsif.",
+                      title: homeText(context, 'Web & Mobile Development'),
+                      description: homeText(
+                        context,
+                        'Saya bisa membuat project Web dan Mobile Cross-platform maupun Native iOS & Android dengan performa tinggi dan desain responsif.',
+                      ),
                       icons: [
                         'flutter-svgrepo-com.svg',
                         'android-svgrepo-com.svg',
@@ -630,9 +655,11 @@ class _HomeMainState extends State<HomeMain> {
                         ? constraints.maxWidth
                         : (constraints.maxWidth - 32) / 3,
                     child: _buildServiceCard(
-                      title: "Backend & API Architecture",
-                      description:
-                          "Membangun data endpoint yang robust menggunakan Node JS, Express JS, dan Laravel untuk kebutuhan integrasi sistem Anda.",
+                      title: homeText(context, 'Backend & API Architecture'),
+                      description: homeText(
+                        context,
+                        'Membangun data endpoint yang robust menggunakan Node JS, Express JS, dan Laravel untuk kebutuhan integrasi sistem Anda.',
+                      ),
                       icons: [
                         'node-js-svgrepo-com.svg',
                         'laravel-1-logo-svgrepo-com.svg',
@@ -645,9 +672,11 @@ class _HomeMainState extends State<HomeMain> {
                         ? constraints.maxWidth
                         : (constraints.maxWidth - 32) / 3,
                     child: _buildServiceCard(
-                      title: "Database Management",
-                      description:
-                          "Pengelolaan database berskala besar menggunakan MySQL dan SQL Server dengan optimasi query yang efisien.",
+                      title: homeText(context, 'Database Management'),
+                      description: homeText(
+                        context,
+                        'Pengelolaan database berskala besar menggunakan MySQL dan SQL Server dengan optimasi query yang efisien.',
+                      ),
                       icons: ['mysql-logo-svgrepo-com.svg'],
                       gradient: [Colors.orangeAccent, Colors.deepOrange],
                     ),
@@ -665,7 +694,7 @@ class _HomeMainState extends State<HomeMain> {
               child: FilledButton.icon(
                 onPressed: () => _animateToPage(2),
                 icon: const FaIcon(FontAwesomeIcons.arrowRight, size: 16),
-                label: const Text('Punya proyek? Mari berbicara'),
+                label: Text(homeText(context, 'Punya proyek? Mari berbicara')),
                 style: FilledButton.styleFrom(
                   backgroundColor: _accent,
                   foregroundColor: _background,
@@ -807,9 +836,9 @@ class _HomeMainState extends State<HomeMain> {
                 size: 28,
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'End-to-End Solutions',
+                  homeText(context, 'End-to-End Solutions'),
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 22,
@@ -821,7 +850,10 @@ class _HomeMainState extends State<HomeMain> {
           ),
           const SizedBox(height: 12),
           Text(
-            "Saya menangani seluruh siklus pengembangan aplikasi, memastikan hasil akhir yang sempurna dan siap tayang.",
+            homeText(
+              context,
+              'Saya menangani seluruh siklus pengembangan aplikasi, memastikan hasil akhir yang sempurna dan siap tayang.',
+            ),
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.5),
               fontSize: 14,
@@ -831,28 +863,36 @@ class _HomeMainState extends State<HomeMain> {
 
           _buildTrackingStep(
             icon: FontAwesomeIcons.lightbulb,
-            title: "Ide & Konsultasi",
-            description:
-                "Analisis kebutuhan, pembuatan mock-up, dan perencanaan fitur sesuai target bisnis Anda.",
+            title: homeText(context, 'Ide & Konsultasi'),
+            description: homeText(
+              context,
+              'Analisis kebutuhan, pembuatan mock-up, dan perencanaan fitur sesuai target bisnis Anda.',
+            ),
             isFirst: true,
           ),
           _buildTrackingStep(
             icon: FontAwesomeIcons.code,
-            title: "Development & Coding",
-            description:
-                "Proses coding menggunakan tech stack terbaru dengan clean code dan performa tinggi.",
+            title: homeText(context, 'Development & Coding'),
+            description: homeText(
+              context,
+              'Proses coding menggunakan tech stack terbaru dengan clean code dan performa tinggi.',
+            ),
           ),
           _buildTrackingStep(
             icon: FontAwesomeIcons.clipboardCheck,
-            title: "Testing & QC",
-            description:
-                "Uji coba menyeluruh di berbagai device (iOS/Android/Web) untuk memastikan tidak ada bug.",
+            title: homeText(context, 'Testing & QC'),
+            description: homeText(
+              context,
+              'Uji coba menyeluruh di berbagai device (iOS/Android/Web) untuk memastikan tidak ada bug.',
+            ),
           ),
           _buildTrackingStep(
             icon: FontAwesomeIcons.rocket,
-            title: "Deployment & Public Release",
-            description:
-                "Rilis ke App Store, Play Store, dan Hosting Web hingga aplikasi bisa diakses publik.",
+            title: homeText(context, 'Deployment & Public Release'),
+            description: homeText(
+              context,
+              'Rilis ke App Store, Play Store, dan Hosting Web hingga aplikasi bisa diakses publik.',
+            ),
             isLast: true,
           ),
         ],
@@ -941,34 +981,46 @@ class _HomeMainState extends State<HomeMain> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionHeader(
-          'ENGINEERING STACK',
-          'Teknologi yang saya gunakan.',
+          homeText(context, 'ENGINEERING STACK'),
+          homeText(context, 'Teknologi yang saya gunakan.'),
         ),
         const SizedBox(height: 12),
-        const Text(
-          'Fondasi teknis untuk merancang antarmuka, menghubungkan data, dan merilis produk.',
+        Text(
+          homeText(
+            context,
+            'Fondasi teknis untuk merancang antarmuka, menghubungkan data, dan merilis produk.',
+          ),
           style: TextStyle(color: Color(0xFFB8C8DA), fontSize: 15, height: 1.6),
         ),
         const SizedBox(height: 30),
-        _buildStackCategory('Mobile & frontend', [
+        _buildStackCategory(homeText(context, 'Mobile & frontend'), [
           _stackItem('Flutter', FontAwesomeIcons.flutter),
           _stackItem('React', FontAwesomeIcons.react),
           _stackItem('Next.js', FontAwesomeIcons.globe),
-          _stackItem('Responsive UI', FontAwesomeIcons.laptopCode),
+          _stackItem(
+            homeText(context, 'Responsive UI'),
+            FontAwesomeIcons.laptopCode,
+          ),
         ]),
         const SizedBox(height: 20),
-        _buildStackCategory('Backend & data', [
+        _buildStackCategory(homeText(context, 'Backend & data'), [
           _stackItem('Node.js', FontAwesomeIcons.nodeJs),
           _stackItem('Laravel', FontAwesomeIcons.laravel),
           _stackItem('MySQL', FontAwesomeIcons.database),
           _stackItem('Firebase', FontAwesomeIcons.fire),
         ]),
         const SizedBox(height: 20),
-        _buildStackCategory('Design & delivery', [
+        _buildStackCategory(homeText(context, 'Design & delivery'), [
           _stackItem('Figma', FontAwesomeIcons.figma),
           _stackItem('Git', FontAwesomeIcons.gitAlt),
-          _stackItem('Testing & QC', FontAwesomeIcons.clipboardCheck),
-          _stackItem('App Store / Play Store', FontAwesomeIcons.googlePlay),
+          _stackItem(
+            homeText(context, 'Testing & QC'),
+            FontAwesomeIcons.clipboardCheck,
+          ),
+          _stackItem(
+            homeText(context, 'App Store / Play Store'),
+            FontAwesomeIcons.googlePlay,
+          ),
         ]),
       ],
     );
@@ -1042,8 +1094,8 @@ class _HomeMainState extends State<HomeMain> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'LANGKAH SELANJUTNYA',
+              Text(
+                homeText(context, 'LANGKAH SELANJUTNYA'),
                 style: TextStyle(
                   color: _accent,
                   fontSize: 12,
@@ -1053,7 +1105,7 @@ class _HomeMainState extends State<HomeMain> {
               ),
               const SizedBox(height: 18),
               Text(
-                'Ide bagus layak menjadi produk yang hebat.',
+                homeText(context, 'Ide bagus layak menjadi produk yang hebat.'),
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: MediaQuery.sizeOf(context).width < 600 ? 39 : 62,
@@ -1063,8 +1115,11 @@ class _HomeMainState extends State<HomeMain> {
                 ),
               ),
               const SizedBox(height: 18),
-              const Text(
-                'Ceritakan kebutuhan Anda. Saya siap membantu merancang, membangun, dan merilis pengalaman digital yang berguna.',
+              Text(
+                homeText(
+                  context,
+                  'Ceritakan kebutuhan Anda. Saya siap membantu merancang, membangun, dan merilis pengalaman digital yang berguna.',
+                ),
                 style: TextStyle(
                   color: Color(0xFFB8C8DA),
                   fontSize: 16,
@@ -1081,7 +1136,7 @@ class _HomeMainState extends State<HomeMain> {
                       'mailto:kiki.triansyah93@gmail.com?subject=Diskusi%20proyek',
                     ),
                     icon: const FaIcon(FontAwesomeIcons.envelope, size: 16),
-                    label: const Text('Kirim email'),
+                    label: Text(homeText(context, 'Kirim email')),
                     style: FilledButton.styleFrom(
                       backgroundColor: _accent,
                       foregroundColor: _background,
@@ -1094,7 +1149,7 @@ class _HomeMainState extends State<HomeMain> {
                   OutlinedButton.icon(
                     onPressed: () => _openLink('https://wa.me/6287728020907'),
                     icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 18),
-                    label: const Text('Chat via WhatsApp'),
+                    label: Text(homeText(context, 'Chat via WhatsApp')),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white,
                       side: const BorderSide(color: Color(0xFF53647A)),
@@ -1441,7 +1496,7 @@ class _AnimatedBackToTopState extends State<_AnimatedBackToTop> {
                   letterSpacing: 2,
                   fontWeight: _isHovered ? FontWeight.bold : FontWeight.normal,
                 ),
-                child: const Text("BACK TO TOP"),
+                child: Text(homeText(context, 'BACK TO TOP')),
               ),
             ],
           ),

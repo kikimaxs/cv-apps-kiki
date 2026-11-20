@@ -23,7 +23,7 @@ void main() {
                 child: Column(
                   children: [
                     const AnimatedHeadline(
-                      text: 'Membangun produk digital yang terasa tepat.',
+                      text: 'Building digital products that feel just right.',
                       highlight: {4, 5},
                       style: TextStyle(fontSize: 32, color: Colors.white),
                     ),

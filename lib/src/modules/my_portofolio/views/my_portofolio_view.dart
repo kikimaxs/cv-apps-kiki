@@ -13,6 +13,9 @@ import '../../../utils/pdf_saver.dart';
 import '../portfolio_pdf.dart';
 import '../portfolio_slide_assets.dart';
 import '../portfolio_slides_data.dart';
+import '../portfolio_v2_id.dart';
+import 'package:cv_apps/src/components/app_language_switch.dart';
+import 'package:cv_apps/src/utils/app_language.dart';
 
 // ---------------------------------------------------------------------------
 // Portfolio page: the 12 pages of the portfolio PDF.
@@ -48,7 +51,7 @@ const _chips = <(String, int)>[
   ('Durioo+', 4),
   ('HadIR', 7),
   ('Lifeline', 9),
-  ('Kontak', 11),
+  ('Contact', 11),
 ];
 
 class MyPortofolioView extends StatefulWidget {
@@ -158,13 +161,27 @@ class _MyPortofolioViewState extends State<MyPortofolioView> {
       }
       if (mounted) {
         messenger?.showSnackBar(
-          const SnackBar(content: Text('PDF portofolio siap diunduh.')),
+          SnackBar(
+            content: Text(
+              uiLabel(
+                'The PDF is ready to download.',
+                id: AppLanguage.notifier.value,
+              ),
+            ),
+          ),
         );
       }
     } catch (_) {
       if (mounted) {
         messenger?.showSnackBar(
-          const SnackBar(content: Text('Gagal membuat PDF portofolio.')),
+          SnackBar(
+            content: Text(
+              uiLabel(
+                "Couldn't create the PDF. Please try again.",
+                id: AppLanguage.notifier.value,
+              ),
+            ),
+          ),
         );
       }
     } finally {
@@ -258,6 +275,7 @@ class _MyPortofolioViewState extends State<MyPortofolioView> {
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 900;
+    final pages = slidePagesFor(id: AppLanguage.isId(context));
     return Scaffold(
       backgroundColor: _barColor,
       body: DefaultTextStyle.merge(
@@ -297,7 +315,7 @@ class _MyPortofolioViewState extends State<MyPortofolioView> {
                                         index: i,
                                         child: _phonePage(
                                           i,
-                                          kSlidePages[i],
+                                          pages[i],
                                           width,
                                           height,
                                         ),
@@ -309,7 +327,7 @@ class _MyPortofolioViewState extends State<MyPortofolioView> {
                                     height: height,
                                     aspect: height > 0 ? width / height : 1.0,
                                     builder: (_) => _SlidePageView(
-                                      page: kSlidePages[i],
+                                      page: pages[i],
                                       width: width,
                                       height: height,
                                     ),
@@ -1184,6 +1202,7 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final id = AppLanguage.isId(context);
     return Container(
       height: _headerH,
       padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -1197,7 +1216,7 @@ class _TopBar extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            tooltip: 'Kembali',
+            tooltip: uiLabel('Back', id: id),
             onPressed: onBack,
             icon: const FaIcon(
               FontAwesomeIcons.arrowLeft,
@@ -1206,9 +1225,9 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
-          const Flexible(
+          Flexible(
             child: Text(
-              'Portofolio',
+              uiLabel('Portfolio', id: id),
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: Colors.white,
@@ -1227,7 +1246,7 @@ class _TopBar extends StatelessWidget {
                 children: [
                   for (var i = 0; i < _chips.length; i++)
                     _NavChip(
-                      label: _chips[i].$1,
+                      label: uiLabel(_chips[i].$1, id: id),
                       active:
                           page >= _chips[i].$2 &&
                           (i + 1 == _chips.length || page < _chips[i + 1].$2),
@@ -1236,10 +1255,14 @@ class _TopBar extends StatelessWidget {
                 ],
               ),
             ),
+          const Padding(
+            padding: EdgeInsets.only(right: 2),
+            child: AppLanguageSwitch(),
+          ),
           ValueListenableBuilder<bool>(
             valueListenable: exporting,
             builder: (context, busy, _) => IconButton(
-              tooltip: 'Unduh PDF',
+              tooltip: uiLabel('Download PDF', id: id),
               onPressed: busy ? null : onExportPdf,
               icon: busy
                   ? const SizedBox(

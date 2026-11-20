@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:cv_apps/src/modules/home/home_copy.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -60,12 +61,12 @@ class _WallCard {
 
 const _p = 'assets/img/portfolio';
 
-const _cards = <_WallCard>[
+List<_WallCard> _cardsFor(BuildContext context) => <_WallCard>[
   _WallCard(
     _Kind.project,
     'MOLA TV',
     _accent,
-    title: 'Streaming olahraga & film',
+    title: homeText(context, 'Streaming olahraga & film'),
     text: 'React Native · JavaScript',
     asset: '$_p/mola_logo.png',
     tags: ['Android', 'iOS', 'ID'],
@@ -75,29 +76,30 @@ const _cards = <_WallCard>[
     'MOLA TV',
     _accent,
     title: '700K',
-    text: 'unduhan iOS & Android sejak 2020',
+    text: homeText(context, 'unduhan iOS & Android sejak 2020'),
   ),
   _WallCard(_Kind.shot, 'MOLA TV', _accent, asset: '$_p/mola_s1.jpg'),
   _WallCard(
     _Kind.highlight,
     'MOLA TV',
     _accent,
-    text:
-        'Live quiz real-time lewat WebSocket, jawaban disimpan dulu agar '
-        'tidak hilang saat server down.',
+    text: homeText(
+      context,
+      'Live quiz real-time lewat WebSocket, jawaban disimpan dulu agar tidak hilang saat server down.',
+    ),
   ),
   _WallCard(
     _Kind.metric,
     'MOLA TV',
     _accent,
     title: '2,3 jt',
-    text: 'penonton laga Inggris vs Spanyol',
+    text: homeText(context, 'penonton laga Inggris vs Spanyol'),
   ),
   _WallCard(
     _Kind.project,
     'Durioo+',
     _orange,
-    title: 'Konten anak ramah Muslim',
+    title: homeText(context, 'Konten anak ramah Muslim'),
     text: 'React Native Expo · TypeScript',
     asset: '$_p/durioo_logo.png',
     tags: ['Android', 'iOS', 'TV', 'MY'],
@@ -107,30 +109,31 @@ const _cards = <_WallCard>[
     'Durioo+',
     _orange,
     title: '60K',
-    text: 'unduhan di Malaysia sejak Maret 2024',
+    text: homeText(context, 'unduhan di Malaysia sejak Maret 2024'),
   ),
   _WallCard(_Kind.shot, 'Durioo+', _orange, asset: '$_p/durioo_s1.jpg'),
   _WallCard(
     _Kind.highlight,
     'Durioo+',
     _orange,
-    text:
-        'Video player dengan casting ke TV, unduh offline, subtitle dan '
-        'pilihan kualitas.',
+    text: homeText(
+      context,
+      'Video player dengan casting ke TV, unduh offline, subtitle dan pilihan kualitas.',
+    ),
   ),
   _WallCard(
     _Kind.metric,
     'Durioo+',
     _orange,
     title: '3 jt+',
-    text: 'total tayangan video',
+    text: homeText(context, 'total tayangan video'),
   ),
   _WallCard(
     _Kind.project,
     'FWD HadIR',
     _green,
-    title: 'Absensi & produktivitas karyawan',
-    text: 'Untuk PT FWD Insurance Indonesia',
+    title: homeText(context, 'Absensi & produktivitas karyawan'),
+    text: homeText(context, 'Untuk PT FWD Insurance Indonesia'),
     asset: '$_p/hadir_icon.png',
     tags: ['Android', 'iOS', 'ID'],
   ),
@@ -138,16 +141,17 @@ const _cards = <_WallCard>[
     _Kind.highlight,
     'FWD HadIR',
     _green,
-    text:
-        'Absen hanya sah di radius ±300 m dari kantor, lengkap dengan '
-        'deteksi fake GPS.',
+    text: homeText(
+      context,
+      'Absen hanya sah di radius ±300 m dari kantor, lengkap dengan deteksi fake GPS.',
+    ),
   ),
   _WallCard(_Kind.shot, 'FWD HadIR', _green, asset: '$_p/hadir_2.jpg'),
   _WallCard(
     _Kind.project,
     'LifeLine',
     _violet,
-    title: 'Ekosistem kesehatan lansia',
+    title: homeText(context, 'Ekosistem kesehatan lansia'),
     text: 'Flutter · Bloc · IoT',
     asset: '$_p/lifeline_icon.png',
     tags: ['Android', 'iOS', 'CN'],
@@ -156,9 +160,10 @@ const _cards = <_WallCard>[
     _Kind.highlight,
     'LifeLine',
     _violet,
-    text:
-        'Smartwatch, smart lock dan dispenser digital terhubung ke satu '
-        'Care Circle keluarga.',
+    text: homeText(
+      context,
+      'Smartwatch, smart lock dan dispenser digital terhubung ke satu Care Circle keluarga.',
+    ),
   ),
   _WallCard(_Kind.shot, 'LifeLine', _violet, asset: '$_p/lifeline_home.png'),
 ];
@@ -299,7 +304,10 @@ class _ProjectWallState extends State<ProjectWall>
 
         final columnCards = <List<_WallCard>>[
           for (var c = 0; c < columns; c++)
-            [for (var i = 0; i < 8; i++) _cards[(c * 5 + i) % _cards.length]],
+            [
+              for (var i = 0; i < 8; i++)
+                _cardsFor(context)[(c * 5 + i) % _cardsFor(context).length],
+            ],
         ];
         final loopHeights = [
           for (final cards in columnCards)
@@ -421,7 +429,7 @@ class _ProjectWallState extends State<ProjectWall>
                 spacing: 18,
                 runSpacing: 14,
                 children: [
-                  const Row(
+                  Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       FaIcon(
@@ -432,14 +440,17 @@ class _ProjectWallState extends State<ProjectWall>
                       SizedBox(width: 8),
                       Flexible(
                         child: Text(
-                          'Geser dindingnya atau scroll untuk menjelajah',
+                          homeText(
+                            context,
+                            'Geser dindingnya atau scroll untuk menjelajah',
+                          ),
                           style: TextStyle(color: _muted, fontSize: 13),
                         ),
                       ),
                     ],
                   ),
                   TextButton.icon(
-                    onPressed: () => context.go('/my_portofolio'),
+                    onPressed: () => context.go('/my_portofolio_v2'),
                     style: TextButton.styleFrom(
                       foregroundColor: _accent,
                       padding: const EdgeInsets.symmetric(
@@ -448,8 +459,8 @@ class _ProjectWallState extends State<ProjectWall>
                       ),
                     ),
                     icon: const FaIcon(FontAwesomeIcons.arrowRight, size: 13),
-                    label: const Text(
-                      'Lihat portofolio lengkap',
+                    label: Text(
+                      homeText(context, 'Lihat portofolio lengkap'),
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
@@ -473,8 +484,8 @@ class _Header extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'PROYEK & DAMPAK',
+        Text(
+          homeText(context, 'PROYEK & DAMPAK'),
           style: TextStyle(
             color: _accent,
             letterSpacing: 2,
@@ -484,7 +495,7 @@ class _Header extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Aplikasi yang sudah dipakai banyak orang.',
+          homeText(context, 'Aplikasi yang sudah dipakai banyak orang.'),
           style: TextStyle(
             color: Colors.white,
             fontSize: mobile ? 30 : 42,
@@ -494,9 +505,11 @@ class _Header extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        const Text(
-          'Streaming, HR dan kesehatan: dari Indonesia, Malaysia sampai '
-          'Tiongkok.',
+        Text(
+          homeText(
+            context,
+            'Streaming, HR dan kesehatan: dari Indonesia, Malaysia sampai Tiongkok.',
+          ),
           style: TextStyle(color: _muted, fontSize: 15, height: 1.5),
         ),
       ],
@@ -848,7 +861,8 @@ class _WallTileState extends State<_WallTile> {
             alignment: Alignment.topCenter,
             cacheWidth: 360,
             filterQuality: FilterQuality.low,
-            semanticLabel: 'Tampilan aplikasi ${card.project}',
+            semanticLabel:
+                '${homeText(context, 'Tampilan aplikasi')} ${card.project}',
           ),
           Align(
             alignment: Alignment.bottomCenter,

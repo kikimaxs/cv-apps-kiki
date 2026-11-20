@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cv_apps/src/routes/app_router.dart';
+import 'package:cv_apps/src/utils/app_language.dart';
 import 'package:cv_apps/src/utils/webview_setup.dart';
 
 void main() {
@@ -14,6 +15,8 @@ class MainApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(routerConfig: AppRouter.router);
+    return AppLanguage.scope(
+      child: MaterialApp.router(routerConfig: AppRouter.router),
+    );
   }
 }

@@ -44,7 +44,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await _pump(tester, 390);
 
-    expect(find.textContaining('MY PORTOFOLIO'), findsOneWidget);
+    expect(find.textContaining('MY PORTFOLIO'), findsOneWidget);
     expect(find.text('01 / 12'), findsNothing);
     expect(tester.takeException(), isNull);
 
@@ -69,10 +69,10 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await _pump(tester, 1280);
 
-    expect(find.textContaining('MY PORTOFOLIO'), findsOneWidget);
+    expect(find.textContaining('MY PORTFOLIO'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.text('Kontak'));
+    await tester.tap(find.text('Contact'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 900));
     await tester.pump(const Duration(milliseconds: 300));
@@ -133,7 +133,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await _pump(tester, 375);
-    expect(find.textContaining('MY PORTOFOLIO'), findsOneWidget);
+    expect(find.textContaining('MY PORTFOLIO'), findsOneWidget);
     expect(find.textContaining('What is the MOLA TV Apps'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
@@ -145,7 +145,7 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       await _pump(tester, 375);
-      final title = tester.getTopLeft(find.textContaining('MY PORTOFOLIO')).dy;
+      final title = tester.getTopLeft(find.textContaining('MY PORTFOLIO')).dy;
       final name = tester.getTopLeft(find.text('KIKI TRIANSYAH').first).dy;
       expect(title, lessThan(name));
       // Both sit in the upper part of the screen, clear of the laptop below.
@@ -163,10 +163,10 @@ void main() {
     await _pump(tester, 1280);
 
     expect(find.text('01 / 12'), findsNothing);
-    expect(tester.getTopLeft(find.text('Portofolio')).dy, lessThan(56));
+    expect(tester.getTopLeft(find.text('Portfolio')).dy, lessThan(56));
     final headers = tester.widgetList<Container>(
       find.ancestor(
-        of: find.text('Portofolio'),
+        of: find.text('Portfolio'),
         matching: find.byType(Container),
       ),
     );
@@ -185,7 +185,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await _pump(tester, 1280);
 
-    await tester.tap(find.text('Kontak'));
+    await tester.tap(find.text('Contact'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 900));
     await tester.pump(const Duration(milliseconds: 300));
