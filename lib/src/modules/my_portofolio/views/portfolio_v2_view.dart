@@ -16,6 +16,7 @@ import '../portfolio_slide_assets.dart';
 import '../portfolio_slides_data.dart';
 import '../portfolio_v2_id.dart';
 import 'package:cv_apps/src/utils/app_language.dart';
+import 'package:cv_apps/src/components/app_loader_overlay.dart';
 import 'portfolio_v2_fx.dart';
 
 // ---------------------------------------------------------------------------
@@ -709,32 +710,9 @@ class _PortfolioV2ViewState extends State<PortfolioV2View>
                       ],
                     ),
                   ),
-                // Covers the page until its pictures are decoded, then fades
-                // away. Only this solid layer fades: the pictures never change
-                // opacity, so they cannot blink.
-                Positioned.fill(
-                  child: IgnorePointer(
-                    ignoring: _revealed,
-                    child: AnimatedOpacity(
-                      opacity: _revealed ? 0 : 1,
-                      duration: const Duration(milliseconds: 700),
-                      curve: Curves.easeOut,
-                      child: const ColoredBox(
-                        color: _bg,
-                        child: Center(
-                          child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: _blue,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                // Covers the page until its pictures are decoded; the loader only
+                // shows if that takes longer than a moment.
+                AppLoaderOverlay(done: _revealed, background: _bg),
                 if (_revealed)
                   Positioned(
                     top: 0,
